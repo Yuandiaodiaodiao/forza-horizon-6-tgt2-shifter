@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>T-GT II + Forza 遥测</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--accent:#58a6ff;--green:#3fb950;--red:#f85149;--yellow:#d29922;--orange:#d18616;--text:#e6edf3;--dim:#8b949e;--cyan:#39d2c0}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'SF Pro Display',-apple-system,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;border-bottom:1px solid var(--border)}
+header h1{font-size:1.1em;font-weight:600}
+.pills{display:flex;gap:6px}
+.pill{font-size:.7em;padding:2px 8px;border-radius:8px}
+.st-on{background:#0d1f0d;color:var(--green);border:1px solid #1a4a1a}
+.st-off{background:#1f0d0d;color:var(--red);border:1px solid #4a1a1a}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px 20px;max-width:1600px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px}
+.card h2{font-size:.7em;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.span2{grid-column:span 2}.span3{grid-column:span 3}.span4{grid-column:span 4}
+.big{font-size:3em;font-weight:700;font-variant-numeric:tabular-nums;line-height:1}
+.unit{font-size:.28em;color:var(--dim);font-weight:400}
+.sub{display:flex;gap:12px;margin-top:6px;flex-wrap:wrap}
+.sub-i{font-size:.8em;color:var(--dim);font-variant-numeric:tabular-nums}.sub-i span{color:var(--text)}
+.tab{font-variant-numeric:tabular-nums}
+
+/* RPM */
+.rpm-track{height:12px;background:#21262d;border-radius:6px;overflow:hidden;margin-top:6px}
+.rpm-fill{height:100%;border-radius:6px;transition:width 60ms,background 60ms}
+.rpm-lbl{display:flex;justify-content:space-between;font-size:.65em;color:var(--dim);margin-top:1px}
+
+/* Gear */
+.gear{font-size:4.5em;font-weight:800;line-height:1;color:var(--accent);text-align:center}
+.gear-lbl{font-size:.7em;color:var(--dim);text-align:center;margin-top:2px}
+
+/* Pedal bars (telemetry) */
+.tpedals{display:flex;gap:8px;margin-top:8px}
+.tp{flex:1}.tp-lbl{font-size:.65em;color:var(--dim);margin-bottom:3px}
+.tp-track{height:6px;background:#21262d;border-radius:3px;overflow:hidden}
+.tp-fill{height:100%;border-radius:3px;transition:width 60ms}
+.tp-a .tp-fill{background:var(--green)}.tp-b .tp-fill{background:var(--red)}.tp-c .tp-fill{background:var(--yellow)}
+
+/* G-force dot */
+.gforce-box{position:relative;width:160px;height:160px;margin:0 auto}
+.gforce-bg{width:100%;height:100%;border:1px solid var(--border);border-radius:50%;position:relative}
+.gforce-cross{position:absolute;top:0;left:0;width:100%;height:100%}
+.gforce-cross::before,.gforce-cross::after{content:'';position:absolute;background:var(--border)}
+.gforce-cross::before{width:1px;height:100%;left:50%;top:0}
+.gforce-cross::after{height:1px;width:100%;top:50%;left:0}
+.gforce-ring{position:absolute;border:1px solid #21262d;border-radius:50%}
+.gforce-dot{width:10px;height:10px;background:var(--red);border-radius:50%;position:absolute;transition:left 60ms,top 60ms;box-shadow:0 0 8px rgba(248,81,73,.5)}
+.gforce-vals{display:flex;justify-content:space-between;font-size:.7em;color:var(--dim);margin-top:4px}
+
+/* Tire diagram */
+.tire-diagram{display:grid;grid-template-columns:1fr 60px 1fr;grid-template-rows:auto auto;gap:4px;max-width:280px;margin:0 auto}
+.tire-box{background:#21262d;border-radius:6px;padding:8px 6px;text-align:center;position:relative}
+.tire-box .t-pos{font-size:.6em;color:var(--dim)}
+.tire-box .t-temp{font-size:1em;font-weight:600}
+.tire-box .t-slip{font-size:.65em;margin-top:2px}
+.tire-box .t-susp{font-size:.6em;color:var(--dim);margin-top:1px}
+.tire-box .t-detail{font-size:.6em;color:var(--dim);margin-top:1px;font-variant-numeric:tabular-nums}
+.tire-car{display:flex;align-items:center;justify-content:center;font-size:.7em;color:var(--dim)}
+.t-cold{color:#58a6ff}.t-ok{color:var(--green)}.t-warm{color:var(--orange)}.t-hot{color:var(--red)}
+.slip-ok{color:var(--green)}.slip-slide{color:var(--yellow)}.slip-spin{color:var(--red)}
+
+/* Suspension bars */
+.susp-row{display:flex;gap:8px;margin-top:8px}
+.susp-col{flex:1;text-align:center}
+.susp-lbl{font-size:.6em;color:var(--dim)}
+.susp-track{height:60px;width:12px;background:#21262d;border-radius:4px;margin:2px auto;position:relative;overflow:hidden}
+.susp-fill{position:absolute;bottom:0;left:0;right:0;background:var(--cyan);border-radius:0 0 4px 4px;transition:height 60ms}
+.susp-val{font-size:.65em;color:var(--text)}
+
+/* Wheel input section */
+.wheel-wrap{display:flex;align-items:center;gap:16px;justify-content:center}
+.wheel-ring{width:120px;height:120px;border:4px solid var(--accent);border-radius:50%;position:relative;transition:transform 50ms}
+.wheel-mark{position:absolute;top:5px;left:50%;transform:translateX(-50%);width:3px;height:18px;background:var(--accent);border-radius:2px}
+.wheel-center{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:.8em;font-weight:700;color:var(--accent)}
+.hw-pedals{display:flex;gap:10px}
+.hw-p{display:flex;flex-direction:column;align-items:center;gap:3px}
+.hw-p-track{width:28px;height:90px;background:#21262d;border-radius:5px;position:relative;overflow:hidden}
+.hw-p-fill{position:absolute;bottom:0;left:0;right:0;transition:height 50ms}
+.hw-p-val{font-size:.65em;min-width:28px;text-align:center}
+.hw-p-name{font-size:.55em;color:var(--dim);text-transform:uppercase}
+.p-t .hw-p-fill{background:var(--green)}.p-b .hw-p-fill{background:var(--red)}.p-c .hw-p-fill{background:var(--yellow)}
+
+/* Buttons */
+.btn-grid{display:flex;flex-wrap:wrap;gap:3px}
+.btn-cell{width:28px;height:28px;border-radius:4px;background:#21262d;display:flex;align-items:center;justify-content:center;font-size:.6em;color:var(--dim);transition:all 80ms}
+.btn-cell.active{background:var(--accent);color:#fff}
+
+/* Lap grid */
+.lap-g{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.lap-i{background:#21262d;border-radius:5px;padding:6px 8px}
+.lap-i .l{font-size:.6em;color:var(--dim)}.lap-i .v{font-size:.95em;font-weight:600}
+
+/* Motion data */
+.motion-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.m-item{background:#21262d;border-radius:5px;padding:5px 8px}
+.m-item .ml{font-size:.6em;color:var(--dim)}.m-item .mv{font-size:.85em;font-weight:500}
+
+/* Log */
+#log{height:90px;overflow-y:auto;font-family:'SF Mono','Consolas',monospace;font-size:.68em;line-height:1.5}
+.log-btn-down{color:var(--red)}.log-btn-up{color:var(--green)}.log-hat{color:var(--yellow)}
+
+/* vJoy gear binding panel */
+.gear-panel{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.gear-btn{width:56px;height:48px;border:2px solid var(--border);border-radius:8px;background:#21262d;color:var(--text);font-size:1.1em;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:all .15s;user-select:none}
+.gear-btn:hover{border-color:var(--accent);background:#1a2233}
+.gear-btn:active,.gear-btn.active{border-color:var(--green);background:#0d2818;color:var(--green);box-shadow:0 0 12px rgba(63,185,80,.3)}
+.gear-btn.clutch-btn:active{border-color:var(--yellow);background:#2a2108;color:var(--yellow);box-shadow:0 0 12px rgba(210,153,34,.3)}
+.gear-btn .g-label{font-size:.5em;font-weight:400;color:var(--dim);margin-top:1px}
+.gear-btn.active .g-label{color:var(--green)}
+.vjoy-status{font-size:.75em;color:var(--dim);margin-top:8px}
+.vjoy-status .ok{color:var(--green)}.vjoy-status .err{color:var(--red)}
+
+@media(max-width:1200px){.grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>T-GT II + Forza Horizon 6</h1>
+  <div class="pills">
+    <span class="pill st-off" id="ws-st">WS 断开</span>
+    <span class="pill st-off" id="tel-st">无遥测</span>
+  </div>
+</header>
+
+<div class="grid">
+  <!-- 速度 -->
+  <div class="card">
+    <h2>速度</h2>
+    <div class="big" id="speed">0<span class="unit"> km/h</span></div>
+    <div class="sub">
+      <div class="sub-i"><span id="speed-mph">0</span> mph</div>
+      <div class="sub-i"><span id="power">0</span> HP</div>
+      <div class="sub-i"><span id="torque">0</span> Nm</div>
+      <div class="sub-i">增压 <span id="boost">0</span></div>
+    </div>
+  </div>
+
+  <!-- 转速 + 挡位 -->
+  <div class="card">
+    <h2>发动机</h2>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div><div class="gear" id="gear">N</div><div class="gear-lbl">挡位</div></div>
+      <div style="flex:1">
+        <div style="font-size:1.8em;font-weight:700" id="rpm">0<span class="unit"> RPM</span></div>
+        <div class="rpm-track"><div class="rpm-fill" id="rpm-bar" style="width:0%"></div></div>
+        <div class="rpm-lbl"><span id="rpm-idle">0</span><span id="rpm-max">0</span></div>
+      </div>
+    </div>
+    <div class="tpedals">
+      <div class="tp tp-a"><div class="tp-lbl">油门 <span id="ta-v">0</span>%</div><div class="tp-track"><div class="tp-fill" id="ta"></div></div></div>
+      <div class="tp tp-b"><div class="tp-lbl">刹车 <span id="tb-v">0</span>%</div><div class="tp-track"><div class="tp-fill" id="tb"></div></div></div>
+      <div class="tp tp-c"><div class="tp-lbl">离合 <span id="tc-v">0</span>%</div><div class="tp-track"><div class="tp-fill" id="tc"></div></div></div>
+    </div>
+  </div>
+
+  <!-- 齿比 -->
+  <div class="card">
+    <h2>齿比</h2>
+    <div id="gear-ratio-display" style="position:relative;height:160px;">
+      <canvas id="ratio-canvas" width="300" height="160" style="width:100%;height:100%"></canvas>
+    </div>
+    <div class="sub" style="margin-top:4px">
+      <div class="sub-i" id="ratio-info">学习中...</div>
+    </div>
+  </div>
+
+  <!-- G-Force -->
+  <div class="card">
+    <h2>G 力</h2>
+    <div class="gforce-box">
+      <div class="gforce-bg">
+        <div class="gforce-cross"></div>
+        <div class="gforce-ring" style="width:50%;height:50%;top:25%;left:25%"></div>
+        <div class="gforce-dot" id="g-dot" style="left:75px;top:75px"></div>
+      </div>
+    </div>
+    <div class="gforce-vals">
+      <span>横向 <b id="g-lat">0.00</b>G</span>
+      <span>纵向 <b id="g-lon">0.00</b>G</span>
+      <span>垂直 <b id="g-vert">0.00</b>G</span>
+    </div>
+  </div>
+
+  <!-- 轮胎（完整细节） -->
+  <div class="card span2">
+    <h2>轮胎与车轮</h2>
+    <div style="display:grid;grid-template-columns:1fr 40px 1fr;grid-template-rows:auto auto;gap:6px;max-width:600px;margin:0 auto">
+      <div class="tire-box" id="t-fl"><div class="t-pos">左前</div><div class="t-temp">--</div><div class="t-detail">滑移 --  滑移率 --  侧偏角 --</div><div class="t-detail">轮速 -- rad/s</div><div class="t-susp">悬挂 --</div></div>
+      <div class="tire-car" style="grid-row:span 2;display:flex;align-items:center;justify-content:center;font-size:.7em;color:var(--dim)">车辆</div>
+      <div class="tire-box" id="t-fr"><div class="t-pos">右前</div><div class="t-temp">--</div><div class="t-detail">滑移 --  滑移率 --  侧偏角 --</div><div class="t-detail">轮速 -- rad/s</div><div class="t-susp">悬挂 --</div></div>
+      <div class="tire-box" id="t-rl"><div class="t-pos">左后</div><div class="t-temp">--</div><div class="t-detail">滑移 --  滑移率 --  侧偏角 --</div><div class="t-detail">轮速 -- rad/s</div><div class="t-susp">悬挂 --</div></div>
+      <div class="tire-box" id="t-rr"><div class="t-pos">右后</div><div class="t-temp">--</div><div class="t-detail">滑移 --  滑移率 --  侧偏角 --</div><div class="t-detail">轮速 -- rad/s</div><div class="t-susp">悬挂 --</div></div>
+    </div>
+  </div>
+
+  <!-- 悬挂 -->
+  <div class="card">
+    <h2>悬挂行程</h2>
+    <div class="susp-row">
+      <div class="susp-col"><div class="susp-lbl">FL</div><div class="susp-track"><div class="susp-fill" id="sf-fl"></div></div><div class="susp-val" id="sv-fl">0</div></div>
+      <div class="susp-col"><div class="susp-lbl">FR</div><div class="susp-track"><div class="susp-fill" id="sf-fr"></div></div><div class="susp-val" id="sv-fr">0</div></div>
+      <div class="susp-col"><div class="susp-lbl">RL</div><div class="susp-track"><div class="susp-fill" id="sf-rl"></div></div><div class="susp-val" id="sv-rl">0</div></div>
+      <div class="susp-col"><div class="susp-lbl">RR</div><div class="susp-track"><div class="susp-fill" id="sf-rr"></div></div><div class="susp-val" id="sv-rr">0</div></div>
+    </div>
+    <div style="margin-top:10px">
+      <h2>车辆信息</h2>
+      <div class="sub">
+        <div class="sub-i">ID <span id="c-ord">--</span></div>
+        <div class="sub-i">等级 <span id="c-class">--</span></div>
+        <div class="sub-i">PI <span id="c-pi">--</span></div>
+        <div class="sub-i"><span id="c-dt">--</span></div>
+        <div class="sub-i"><span id="c-cyl">--</span>缸</div>
+        <div class="sub-i">燃油 <span id="c-fuel">--</span></div>
+      </div>
+    </div>
+    <div style="margin-top:10px">
+      <h2>游戏输入</h2>
+      <div class="sub">
+        <div class="sub-i">转向 <span id="g-steer">0</span></div>
+        <div class="sub-i">手刹 <span id="g-hbrake">0</span></div>
+        <div class="sub-i">比赛时间 <span id="g-rtime">--</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 比赛 / 圈速 -->
+  <div class="card">
+    <h2>比赛</h2>
+    <div class="lap-g">
+      <div class="lap-i"><div class="l">圈数</div><div class="v" id="lap-n">--</div></div>
+      <div class="lap-i"><div class="l">名次</div><div class="v" id="race-p">--</div></div>
+      <div class="lap-i"><div class="l">里程</div><div class="v" id="dist">--</div></div>
+      <div class="lap-i"><div class="l">当前圈</div><div class="v" id="lap-c">--</div></div>
+      <div class="lap-i"><div class="l">上一圈</div><div class="v" id="lap-l">--</div></div>
+      <div class="lap-i"><div class="l">最佳圈</div><div class="v" id="lap-b">--</div></div>
+      <div class="lap-i"><div class="l">比赛时间</div><div class="v" id="race-t">--</div></div>
+    </div>
+  </div>
+
+  <!-- 运动 / 姿态 -->
+  <div class="card">
+    <h2>运动姿态</h2>
+    <div class="motion-grid">
+      <div class="m-item"><div class="ml">偏航</div><div class="mv" id="m-yaw">0</div></div>
+      <div class="m-item"><div class="ml">俯仰</div><div class="mv" id="m-pitch">0</div></div>
+      <div class="m-item"><div class="ml">横滚</div><div class="mv" id="m-roll">0</div></div>
+      <div class="m-item"><div class="ml">速度 X</div><div class="mv" id="m-vx">0</div></div>
+      <div class="m-item"><div class="ml">速度 Y</div><div class="mv" id="m-vy">0</div></div>
+      <div class="m-item"><div class="ml">速度 Z</div><div class="mv" id="m-vz">0</div></div>
+      <div class="m-item"><div class="ml">角速度 X</div><div class="mv" id="m-ax">0</div></div>
+      <div class="m-item"><div class="ml">角速度 Y</div><div class="mv" id="m-ay">0</div></div>
+      <div class="m-item"><div class="ml">角速度 Z</div><div class="mv" id="m-az">0</div></div>
+    </div>
+    <div class="sub" style="margin-top:8px">
+      <div class="sub-i">位置 (<span id="px">0</span>, <span id="py">0</span>, <span id="pz">0</span>)</div>
+    </div>
+  </div>
+
+  <!-- 方向盘硬件输入 -->
+  <div class="card">
+    <h2>方向盘硬件</h2>
+    <div class="wheel-wrap">
+      <div class="wheel-ring" id="wheel"><div class="wheel-mark"></div><div class="wheel-center" id="w-deg">0°</div></div>
+      <div class="hw-pedals">
+        <div class="hw-p p-t"><div class="hw-p-val" id="wp-tv">0%</div><div class="hw-p-track"><div class="hw-p-fill" id="wp-t" style="height:0%"></div></div><div class="hw-p-name">油门</div></div>
+        <div class="hw-p p-b"><div class="hw-p-val" id="wp-bv">0%</div><div class="hw-p-track"><div class="hw-p-fill" id="wp-b" style="height:0%"></div></div><div class="hw-p-name">刹车</div></div>
+        <div class="hw-p p-c"><div class="hw-p-val" id="wp-cv">0%</div><div class="hw-p-track"><div class="hw-p-fill" id="wp-c" style="height:0%"></div></div><div class="hw-p-name">离合</div></div>
+      </div>
+    </div>
+    <div style="margin-top:8px">
+      <h2>按键</h2>
+      <div class="btn-grid" id="btn-grid"></div>
+    </div>
+  </div>
+
+  <!-- 赛道地图 -->
+  <div class="card span2">
+    <h2>赛道地图 <span style="font-weight:400;font-size:.9em;color:var(--dim)" id="map-info">(行驶一圈后绘制)</span></h2>
+    <div style="position:relative">
+      <canvas id="track-canvas" width="600" height="360" style="width:100%;background:#0d1117;border-radius:6px;border:1px solid var(--border)"></canvas>
+      <div style="position:absolute;top:8px;right:8px;display:flex;gap:6px">
+        <button onclick="clearTrack()" style="background:#21262d;color:var(--dim);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.7em;cursor:pointer">清除</button>
+        <button onclick="toggleTrail()" id="trail-btn" style="background:#21262d;color:var(--dim);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.7em;cursor:pointer">轨迹：开</button>
+      </div>
+    </div>
+    <div class="sub" style="margin-top:6px">
+      <div class="sub-i">点数 <span id="map-pts">0</span></div>
+      <div class="sub-i">速度颜色：<span style="color:var(--green)">慢</span> → <span style="color:var(--yellow)">中</span> → <span style="color:var(--red)">快</span></div>
+    </div>
+  </div>
+
+  <!-- 马力机图表：马力与扭矩随转速变化 -->
+  <div class="card span2">
+    <h2>马力机图表 <span style="font-weight:400;font-size:.9em;color:var(--dim)" id="dyno-info">(拉转通过各挡后绘制)</span></h2>
+    <canvas id="dyno-canvas" width="600" height="280" style="width:100%;background:#0d1117;border-radius:6px;border:1px solid var(--border)"></canvas>
+    <div class="sub" style="margin-top:6px">
+      <div class="sub-i"><span style="color:var(--red)">━</span> 马力 (HP)</div>
+      <div class="sub-i"><span style="color:var(--cyan)">━</span> 扭矩 (Nm)</div>
+      <div class="sub-i">样本 <span id="dyno-pts">0</span></div>
+      <div class="sub-i">峰值 <span id="dyno-peak-hp">--</span> HP @ <span id="dyno-peak-rpm-hp">--</span> RPM</div>
+      <div class="sub-i">峰值 <span id="dyno-peak-tq">--</span> Nm @ <span id="dyno-peak-rpm-tq">--</span> RPM</div>
+      <button onclick="window.clearDyno()" style="background:#21262d;color:var(--dim);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.7em;cursor:pointer;margin-left:auto">清除</button>
+    </div>
+  </div>
+
+  <!-- 3D 赛道地图 -->
+  <div class="card span2">
+    <h2>3D 赛道地图 <span style="font-weight:400;font-size:.9em;color:var(--dim)" id="map3d-info">(行驶后生成)</span></h2>
+    <div id="three-container" style="width:100%;height:360px;border-radius:6px;overflow:hidden;border:1px solid var(--border);position:relative">
+      <div style="position:absolute;bottom:6px;left:8px;font-size:.6em;color:var(--dim);z-index:10">拖动旋转 · 滚轮缩放 · 右键拖动平移</div>
+    </div>
+    <div class="sub" style="margin-top:6px">
+      <div class="sub-i">高度范围：<span id="alt-range">--</span>m</div>
+      <div class="sub-i">位置 (<span id="p3x">0</span>, <span id="p3y">0</span>, <span id="p3z">0</span>)</div>
+    </div>
+  </div>
+
+  <!-- 学习到的功率曲线（所有挡位叠加） -->
+  <div class="card span2">
+    <h2>功率曲线（已学习） <span style="font-weight:400;font-size:.9em;color:var(--dim)" id="pcurve-info">(全油门行驶后生成)</span></h2>
+    <canvas id="pcurve-canvas" width="600" height="300" style="width:100%;background:#0d1117;border-radius:6px;border:1px solid var(--border)"></canvas>
+    <div class="sub" style="margin-top:6px">
+      <div class="sub-i" id="pcurve-gears">挡位：--</div>
+      <div class="sub-i" id="pcurve-peak">峰值：--</div>
+      <div class="sub-i">换挡点显示为 <span style="color:#fff">▼</span> 标记</div>
+    </div>
+  </div>
+
+  <!-- 自动换挡状态 -->
+  <div class="card span2">
+    <h2>自动换挡策略 <span style="font-weight:400;font-size:.9em;color:var(--dim)" id="as-algo"></span></h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div class="sub" style="flex-direction:column;gap:4px">
+          <div class="sub-i">状态：<span id="as-enabled" style="font-weight:600">--</span></div>
+          <div class="sub-i">车辆：<span id="as-car">--</span></div>
+          <div class="sub-i">样本：<span id="as-samples">--</span></div>
+          <div class="sub-i">换挡：<span id="as-shifts">--</span></div>
+          <div class="sub-i">断油：<span id="as-fuelcut">--</span></div>
+          <div class="sub-i">模式：<span id="as-mode" style="font-weight:600">--</span></div>
+          <div class="sub-i">vJoy 保持：<span id="as-vjoy-held" style="font-weight:600">--</span></div>
+          <div class="sub-i">禁止升挡：<span id="as-block-up">否</span> | 禁止降挡：<span id="as-block-dn">否</span></div>
+          <div class="sub-i" id="as-gear-status" style="font-size:.7em;color:var(--dim)"></div>
+        </div>
+        <div style="margin-top:12px;display:grid;grid-template-columns:110px 1fr;gap:7px;align-items:center;font-size:.75em">
+          <label style="color:var(--dim)">换挡输出</label>
+          <select id="cfg-shift-mode" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px">
+            <option value="vjoy">vJoy 直接挡位</option>
+            <option value="keyboard">键盘升/降挡</option>
+          </select>
+          <label style="color:var(--dim)">vJoy 路径</label>
+          <input id="cfg-vjoy-path" placeholder="C:\Program Files\vJoy 或 ...\vJoyInterface.dll" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;min-width:0">
+          <label style="color:var(--dim)">手动冷却</label>
+          <input id="cfg-cooldown" type="number" min="0" max="120" step="0.5" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px">
+          <div></div>
+          <button id="cfg-save" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px 8px;cursor:pointer">保存设置</button>
+          <div></div>
+          <div class="sub-i" id="cfg-status">配置加载中...</div>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:.7em;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">最近换挡</div>
+        <div id="as-log" style="height:100px;overflow-y:auto;font-family:'SF Mono','Consolas',monospace;font-size:.65em;line-height:1.5;color:var(--dim)"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- vJoy 挡位绑定 -->
+  <div class="card">
+    <h2>vJoy 挡位绑定 <span style="font-weight:400;font-size:.9em;color:var(--dim)">(点击挡位按钮用于 Forza 绑定)</span></h2>
+    <div class="gear-panel" id="gear-panel"></div>
+    <div class="vjoy-status" id="vjoy-status">正在检查 vJoy...</div>
+  </div>
+
+  <!-- 路面 + 日志 -->
+  <div class="card span2">
+    <div style="display:flex;gap:16px">
+      <div style="flex:1">
+        <h2>路面</h2>
+        <div class="motion-grid">
+          <div class="m-item"><div class="ml">路肩 左前</div><div class="mv" id="r-fl">0</div></div>
+          <div class="m-item"><div class="ml">路肩 右前</div><div class="mv" id="r-fr">0</div></div>
+          <div class="m-item"><div class="ml">路肩 左后</div><div class="mv" id="r-rl">0</div></div>
+          <div class="m-item"><div class="ml">路肩 右后</div><div class="mv" id="r-rr">0</div></div>
+          <div class="m-item"><div class="ml">积水 左前</div><div class="mv" id="p-fl">0</div></div>
+          <div class="m-item"><div class="ml">积水 右前</div><div class="mv" id="p-fr">0</div></div>
+          <div class="m-item"><div class="ml">积水 左后</div><div class="mv" id="p-rl">0</div></div>
+          <div class="m-item"><div class="ml">积水 右后</div><div class="mv" id="p-rr">0</div></div>
+        </div>
+      </div>
+      <div style="flex:1">
+        <h2>事件日志</h2>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const WS_URL=(location.protocol==='https:'?'wss://':'ws://')+location.host;
+const API_BASE=location.origin;
+const STEER_AXIS=0,PEDAL={throttle:1,brake:2,clutch:3},STEER_DEG=900;
+let numBtn=25;
+function initBtns(n){numBtn=n;const g=document.getElementById('btn-grid');g.innerHTML='';for(let i=0;i<n;i++){const d=document.createElement('div');d.className='btn-cell';d.id='btn-'+i;d.textContent=i;g.appendChild(d)}}
+initBtns(25);
+
+function fmtLap(s){if(!s||s<=0)return'--';const m=Math.floor(s/60),sec=(s%60).toFixed(3);return m>0?m+':'+sec.padStart(6,'0'):sec+'s'}
+function tCls(t){return t<50?'t-cold':t<100?'t-ok':t<120?'t-warm':'t-hot'}
+function sCls(s){const a=Math.abs(s);return a<0.5?'slip-ok':a<2?'slip-slide':'slip-spin'}
+function rpmCol(p){return p<.7?'var(--green)':p<.85?'var(--yellow)':p<.95?'var(--orange)':'var(--red)'}
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v))}
+
+let lastTel=0;
+function handleTel(d){
+  lastTel=Date.now();
+  document.getElementById('tel-st').textContent='遥测正常';
+  document.getElementById('tel-st').className='pill st-on';
+  // Speed
+  document.getElementById('speed').innerHTML=d.speed_kmh.toFixed(0)+'<span class="unit"> km/h</span>';
+  document.getElementById('speed-mph').textContent=d.speed_mph.toFixed(0);
+  document.getElementById('power').textContent=d.power_hp.toFixed(0);
+  document.getElementById('torque').textContent=d.torque_nm.toFixed(0);
+  document.getElementById('boost').textContent=d.boost.toFixed(1);
+  // Gear + RPM
+  const g=d.gear;
+  document.getElementById('gear').textContent=g===0?'R':g===11?'N':g;
+  document.getElementById('rpm').innerHTML=d.rpm+'<span class="unit"> RPM</span>';
+  document.getElementById('rpm-idle').textContent=d.idle_rpm;
+  document.getElementById('rpm-max').textContent=d.max_rpm;
+  const rp=d.max_rpm>0?d.rpm/d.max_rpm:0;
+  document.getElementById('rpm-bar').style.width=(rp*100)+'%';
+  document.getElementById('rpm-bar').style.background=rpmCol(rp);
+  // Telemetry pedals
+  const ap=d.accel/255*100,bp=d.brake/255*100,cp=d.clutch/255*100;
+  document.getElementById('ta').style.width=ap+'%';document.getElementById('ta-v').textContent=ap.toFixed(0);
+  document.getElementById('tb').style.width=bp+'%';document.getElementById('tb-v').textContent=bp.toFixed(0);
+  document.getElementById('tc').style.width=cp+'%';document.getElementById('tc-v').textContent=cp.toFixed(0);
+  // G-force
+  document.getElementById('g-lat').textContent=d.g_lat.toFixed(2);
+  document.getElementById('g-lon').textContent=d.g_lon.toFixed(2);
+  document.getElementById('g-vert').textContent=d.g_vert.toFixed(2);
+  const gMax=3,cx=80,cy=80,r=70;
+  const gx=cx+clamp(d.g_lat/gMax,-1,1)*r-5;
+  const gy=cy-clamp(d.g_lon/gMax,-1,1)*r-5;
+  document.getElementById('g-dot').style.left=gx+'px';
+  document.getElementById('g-dot').style.top=gy+'px';
+  // Tires (full detail)
+  const ids=['fl','fr','rl','rr'];
+  ids.forEach((id,i)=>{
+    const el=document.getElementById('t-'+id);
+    const t=d.tire_temp[i],sl=d.tire_slip[i],su=d.susp_travel[i];
+    const sr=d.slip_ratio?d.slip_ratio[i]:0;
+    const sa=d.slip_angle?d.slip_angle[i]:0;
+    const ws=d.wheel_speed?d.wheel_speed[i]:0;
+    el.querySelector('.t-temp').textContent=t.toFixed(0)+'°';
+    el.querySelector('.t-temp').className='t-temp '+tCls(t);
+    const details=el.querySelectorAll('.t-detail');
+    if(details[0]){details[0].textContent=`滑移 ${sl.toFixed(2)}  滑移率 ${sr.toFixed(3)}  侧偏角 ${sa.toFixed(2)}`;details[0].className='t-detail '+sCls(sl)}
+    if(details[1])details[1].textContent=`轮速 ${ws.toFixed(1)} rad/s`;
+    el.querySelector('.t-susp').textContent='悬挂 '+su.toFixed(3)+(d.susp_travel_m?' ('+d.susp_travel_m[i].toFixed(3)+'m)':'');
+  });
+  // Suspension bars
+  ids.forEach((id,i)=>{
+    const pct=clamp(d.susp_travel[i]*100,0,100);
+    document.getElementById('sf-'+id).style.height=pct+'%';
+    document.getElementById('sv-'+id).textContent=(d.susp_travel_m?d.susp_travel_m[i].toFixed(3):'--');
+  });
+  // Car
+  document.getElementById('c-ord').textContent=d.car_ordinal||'--';
+  document.getElementById('c-class').textContent=d.car_class;
+  document.getElementById('c-pi').textContent=d.car_pi;
+  document.getElementById('c-dt').textContent=d.drivetrain;
+  document.getElementById('c-cyl').textContent=d.num_cylinders||'?';
+  document.getElementById('c-fuel').textContent=d.fuel.toFixed(2);
+  // Game inputs
+  document.getElementById('g-steer').textContent=d.steer||0;
+  document.getElementById('g-hbrake').textContent=d.handbrake||0;
+  document.getElementById('g-rtime').textContent=fmtLap(d.current_race_time);
+  // Race
+  document.getElementById('lap-n').textContent=d.lap_number||'--';
+  document.getElementById('race-p').textContent=d.race_position||'--';
+  document.getElementById('dist').textContent=(d.distance/1000).toFixed(2)+' km';
+  document.getElementById('race-t').textContent=fmtLap(d.current_race_time);
+  document.getElementById('lap-c').textContent=fmtLap(d.current_lap);
+  document.getElementById('lap-l').textContent=fmtLap(d.last_lap);
+  document.getElementById('lap-b').textContent=fmtLap(d.best_lap);
+  // Motion
+  document.getElementById('m-yaw').textContent=d.yaw.toFixed(3);
+  document.getElementById('m-pitch').textContent=d.pitch.toFixed(3);
+  document.getElementById('m-roll').textContent=d.roll.toFixed(3);
+  document.getElementById('m-vx').textContent=d.vel_x.toFixed(2);
+  document.getElementById('m-vy').textContent=d.vel_y.toFixed(2);
+  document.getElementById('m-vz').textContent=d.vel_z.toFixed(2);
+  document.getElementById('m-ax').textContent=d.ang_vel_x.toFixed(3);
+  document.getElementById('m-ay').textContent=d.ang_vel_y.toFixed(3);
+  document.getElementById('m-az').textContent=d.ang_vel_z.toFixed(3);
+  document.getElementById('px').textContent=d.pos_x;
+  document.getElementById('py').textContent=d.pos_y;
+  document.getElementById('pz').textContent=d.pos_z;
+  // Surface
+  if(d.rumble_strip){
+    document.getElementById('r-fl').textContent=d.rumble_strip[0].toFixed(2);
+    document.getElementById('r-fr').textContent=d.rumble_strip[1].toFixed(2);
+    document.getElementById('r-rl').textContent=d.rumble_strip[2].toFixed(2);
+    document.getElementById('r-rr').textContent=d.rumble_strip[3].toFixed(2);
+  }
+  if(d.puddle_depth){
+    document.getElementById('p-fl').textContent=d.puddle_depth[0].toFixed(2);
+    document.getElementById('p-fr').textContent=d.puddle_depth[1].toFixed(2);
+    document.getElementById('p-rl').textContent=d.puddle_depth[2].toFixed(2);
+    document.getElementById('p-rr').textContent=d.puddle_depth[3].toFixed(2);
+  }
+  // Gear ratio display — update active gear
+  updateGearRatios(d.gear);
+
+  // Dyno chart
+  addDynoSample(d.rpm, d.power_hp, d.torque_nm);
+  drawDyno();
+  // 2D Track map
+  addTrackPt(d.pos_x, d.pos_z, d.speed_kmh, d.brake);
+  drawTrack(d.pos_x, d.pos_z, d.yaw);
+  // 3D Track map
+  add3dPt(d.pos_x, d.pos_y, d.pos_z, d.speed_kmh);
+  update3dTrack(d.pos_x, d.pos_y, d.pos_z, d.yaw, d.speed_kmh);
+}
+
+function hwPedal(name,raw){const p=Math.max(0,((1-raw)/2)*100);const f=document.getElementById('wp-'+name[0]);const v=document.getElementById('wp-'+name[0]+'v');if(f)f.style.height=p.toFixed(1)+'%';if(v)v.textContent=p.toFixed(0)+'%'}
+function hwWheel(val){const d=val*(STEER_DEG/2);document.getElementById('wheel').style.transform='rotate('+d+'deg)';document.getElementById('w-deg').textContent=d.toFixed(1)+'°'}
+
+function addLog(e){const log=document.getElementById('log'),div=document.createElement('div');const ts=new Date(e.ts*1000).toLocaleTimeString('zh-CN',{hour12:false,fractionalSecondDigits:1});let c='',t='';if(e.type==='button_down'){c='log-btn-down';t=ts+' 按键 '+e.button+' 按下'}else if(e.type==='button_up'){c='log-btn-up';t=ts+' 按键 '+e.button+' 松开'}else if(e.type==='hat'){c='log-hat';t=ts+' 方向帽 ['+e.value+']'}else return;div.className=c;div.textContent=t;log.appendChild(div);if(log.children.length>200)log.removeChild(log.firstChild);log.scrollTop=log.scrollHeight}
+
+setInterval(()=>{if(Date.now()-lastTel>3000&&lastTel>0){document.getElementById('tel-st').textContent='无遥测';document.getElementById('tel-st').className='pill st-off'}},1000);
+
+// ---- Gear Ratio Visualization ----
+const ratioCanvas = document.getElementById('ratio-canvas');
+const rCtx = ratioCanvas.getContext('2d');
+let knownRatios = {};
+let currentGearForRatio = 1;
+
+function updateGearRatios(telemetryGear) {
+  currentGearForRatio = telemetryGear;
+}
+
+function setGearRatios(ratios) {
+  knownRatios = ratios;
+  drawGearRatios();
+}
+
+function drawGearRatios() {
+  const dpr = window.devicePixelRatio || 1;
+  if (ratioCanvas.width !== ratioCanvas.clientWidth * dpr) {
+    ratioCanvas.width = ratioCanvas.clientWidth * dpr;
+    ratioCanvas.height = ratioCanvas.clientHeight * dpr;
+  }
+  const W = ratioCanvas.width, H = ratioCanvas.height;
+  rCtx.clearRect(0, 0, W, H);
+
+  const gears = Object.keys(knownRatios).map(Number).filter(g => g >= 1).sort((a, b) => a - b);
+  if (gears.length < 1) {
+    rCtx.fillStyle = '#8b949e';
+    rCtx.font = `${12*dpr}px sans-serif`;
+    rCtx.textAlign = 'center';
+    rCtx.fillText('行驶以学习齿比...', W/2, H/2);
+    return;
+  }
+
+  const maxRatio = Math.max(...gears.map(g => knownRatios[g]));
+  const pad = { l: 10*dpr, r: 10*dpr, t: 20*dpr, b: 28*dpr };
+  const usableW = W - pad.l - pad.r;
+  const usableH = H - pad.t - pad.b;
+  const barW = Math.min(usableW / (gears.length * 1.8), 40*dpr);
+  const gap = (usableW - barW * gears.length) / (gears.length + 1);
+
+  const accentColors = ['#58a6ff','#3fb950','#d29922','#f0883e','#f85149','#bc8cff','#39d2c0','#da7dae','#768390','#57ab5a'];
+
+  for (let i = 0; i < gears.length; i++) {
+    const g = gears[i];
+    const ratio = knownRatios[g];
+    const barH = (ratio / maxRatio) * usableH;
+    const x = pad.l + gap + i * (barW + gap);
+    const y = pad.t + usableH - barH;
+    const isActive = g === currentGearForRatio;
+
+    // Bar
+    const color = accentColors[i % accentColors.length];
+    rCtx.fillStyle = isActive ? color : color + '99';
+    rCtx.beginPath();
+    rCtx.roundRect(x, y, barW, barH, [4*dpr, 4*dpr, 0, 0]);
+    rCtx.fill();
+
+    // Active glow
+    if (isActive) {
+      rCtx.shadowColor = color;
+      rCtx.shadowBlur = 12*dpr;
+      rCtx.fillStyle = color;
+      rCtx.beginPath();
+      rCtx.roundRect(x, y, barW, barH, [4*dpr, 4*dpr, 0, 0]);
+      rCtx.fill();
+      rCtx.shadowBlur = 0;
+    }
+
+    // Ratio value on top
+    rCtx.fillStyle = isActive ? '#fff' : '#8b949e';
+    rCtx.font = `${isActive ? 'bold ' : ''}${9*dpr}px sans-serif`;
+    rCtx.textAlign = 'center';
+    rCtx.fillText(ratio.toFixed(2), x + barW/2, y - 4*dpr);
+
+    // Gear number below
+    rCtx.fillStyle = isActive ? '#fff' : '#8b949e';
+    rCtx.font = `${isActive ? 'bold ' : ''}${11*dpr}px sans-serif`;
+    rCtx.fillText(g === 0 ? 'R' : String(g), x + barW/2, H - 8*dpr);
+
+    // Step ratio (gear N / gear N+1)
+    if (i < gears.length - 1) {
+      const nextRatio = knownRatios[gears[i+1]];
+      if (nextRatio > 0) {
+        const step = (ratio / nextRatio).toFixed(2);
+        const midX = x + barW + gap/2;
+        rCtx.fillStyle = '#4d5566';
+        rCtx.font = `${7*dpr}px sans-serif`;
+        rCtx.fillText(`×${step}`, midX, pad.t + usableH + 2*dpr);
+      }
+    }
+  }
+
+  // Info
+  const finalDrive = gears.length >= 2 ? ` | 终传≈${(knownRatios[gears[gears.length-1]]).toFixed(2)}` : '';
+  document.getElementById('ratio-info').textContent = `已识别 ${gears.length} 个挡位${finalDrive}`;
+}
+
+// Gear ratios are now fetched via the autoshift status poller below
+
+// ---- Track Map ----
+const trackCanvas = document.getElementById('track-canvas');
+const tCtx = trackCanvas.getContext('2d');
+let trackPts = []; // {x, z, speed, brake}
+let trackMinX=Infinity,trackMaxX=-Infinity,trackMinZ=Infinity,trackMaxZ=-Infinity;
+let showTrail = true;
+const MAX_TRACK_PTS = 20000;
+const SAMPLE_DIST = 2; // min meters between recorded points
+
+function clearTrack(){ trackPts=[];trackMinX=Infinity;trackMaxX=-Infinity;trackMinZ=Infinity;trackMaxZ=-Infinity;tCtx.clearRect(0,0,trackCanvas.width,trackCanvas.height);document.getElementById('map-pts').textContent='0';document.getElementById('map-info').textContent='(行驶一圈后绘制)';if(window.clearTrack3d)window.clearTrack3d() }
+function toggleTrail(){ showTrail=!showTrail; document.getElementById('trail-btn').textContent='轨迹：'+(showTrail?'开':'关') }
+window.clearTrack = clearTrack;
+window.toggleTrail = toggleTrail;
+
+function speedColor(spd, maxSpd) {
+  const t = Math.min(spd / Math.max(maxSpd, 1), 1);
+  if (t < 0.33) { const r=Math.round(59+t/0.33*(210-59)),g=Math.round(185+t/0.33*(153-185)),b=Math.round(80+t/0.33*(34-80)); return `rgb(${r},${g},${b})`; }
+  if (t < 0.66) { const p=(t-0.33)/0.33,r=Math.round(210+p*(248-210)),g=Math.round(153-p*(153-81)),b=Math.round(34+p*(73-34)); return `rgb(${r},${g},${b})`; }
+  return `rgb(248,81,73)`;
+}
+
+function addTrackPt(x, z, speed, brake) {
+  if (trackPts.length > 0) {
+    const last = trackPts[trackPts.length-1];
+    const dx = x - last.x, dz = z - last.z;
+    if (dx*dx + dz*dz < SAMPLE_DIST*SAMPLE_DIST) return;
+  }
+  trackPts.push({x, z, speed, brake: brake > 50});
+  if (trackPts.length > MAX_TRACK_PTS) trackPts.shift();
+  if (x < trackMinX) trackMinX = x; if (x > trackMaxX) trackMaxX = x;
+  if (z < trackMinZ) trackMinZ = z; if (z > trackMaxZ) trackMaxZ = z;
+}
+
+function drawTrack(curX, curZ, curYaw) {
+  const w = trackCanvas.width, h = trackCanvas.height;
+  const dpr = window.devicePixelRatio || 1;
+  if (trackCanvas.width !== trackCanvas.clientWidth * dpr) {
+    trackCanvas.width = trackCanvas.clientWidth * dpr;
+    trackCanvas.height = trackCanvas.clientHeight * dpr;
+  }
+  const cw = trackCanvas.width, ch = trackCanvas.height;
+  tCtx.clearRect(0, 0, cw, ch);
+
+  if (trackPts.length < 2) return;
+  document.getElementById('map-pts').textContent = trackPts.length;
+  document.getElementById('map-info').textContent = '';
+
+  const rangeX = trackMaxX - trackMinX || 1;
+  const rangeZ = trackMaxZ - trackMinZ || 1;
+  const pad = 30 * dpr;
+  const usableW = cw - pad*2, usableH = ch - pad*2;
+  const scale = Math.min(usableW / rangeX, usableH / rangeZ);
+  const offX = pad + (usableW - rangeX * scale) / 2;
+  const offZ = pad + (usableH - rangeZ * scale) / 2;
+
+  function toCanvas(px, pz) {
+    return [ offX + (px - trackMinX) * scale, offZ + (pz - trackMinZ) * scale ];
+  }
+
+  let maxSpd = 0;
+  for (const p of trackPts) if (p.speed > maxSpd) maxSpd = p.speed;
+
+  const startIdx = showTrail ? 0 : Math.max(0, trackPts.length - 500);
+
+  // draw path segments with speed color
+  tCtx.lineWidth = 2.5 * dpr;
+  tCtx.lineCap = 'round';
+  for (let i = startIdx + 1; i < trackPts.length; i++) {
+    const [x1,y1] = toCanvas(trackPts[i-1].x, trackPts[i-1].z);
+    const [x2,y2] = toCanvas(trackPts[i].x, trackPts[i].z);
+    tCtx.strokeStyle = trackPts[i].brake ? 'rgba(248,81,73,0.9)' : speedColor(trackPts[i].speed, maxSpd);
+    if (!showTrail) { const alpha = (i - startIdx) / (trackPts.length - startIdx); tCtx.globalAlpha = 0.2 + alpha * 0.8; }
+    tCtx.beginPath(); tCtx.moveTo(x1,y1); tCtx.lineTo(x2,y2); tCtx.stroke();
+  }
+  tCtx.globalAlpha = 1;
+
+  // brake zones: overlay red dots where braking
+  if (showTrail) {
+    tCtx.fillStyle = 'rgba(248,81,73,0.5)';
+    for (const p of trackPts) {
+      if (p.brake) {
+        const [cx, cy] = toCanvas(p.x, p.z);
+        tCtx.beginPath(); tCtx.arc(cx, cy, 2*dpr, 0, Math.PI*2); tCtx.fill();
+      }
+    }
+  }
+
+  // car position arrow
+  const [cx, cy] = toCanvas(curX, curZ);
+  const sz = 8 * dpr;
+  tCtx.save();
+  tCtx.translate(cx, cy);
+  tCtx.rotate(-curYaw);
+  tCtx.fillStyle = '#fff';
+  tCtx.beginPath();
+  tCtx.moveTo(0, -sz);
+  tCtx.lineTo(-sz*0.6, sz*0.5);
+  tCtx.lineTo(sz*0.6, sz*0.5);
+  tCtx.closePath();
+  tCtx.fill();
+  tCtx.restore();
+
+  // glow on car pos
+  tCtx.fillStyle = 'rgba(255,255,255,0.15)';
+  tCtx.beginPath(); tCtx.arc(cx, cy, 14*dpr, 0, Math.PI*2); tCtx.fill();
+}
+
+// ---- Dyno Chart ----
+const dynoCanvas = document.getElementById('dyno-canvas');
+const dCtx = dynoCanvas.getContext('2d');
+const RPM_BIN = 50; // group data every 50 RPM
+let dynoBins = {}; // { rpmBin: { hpSum, tqSum, count } }
+let dynoMaxHp = 0, dynoMaxTq = 0, dynoMaxRpm = 0, dynoMinRpm = Infinity;
+let dynoPeakHp = 0, dynoPeakHpRpm = 0, dynoPeakTq = 0, dynoPeakTqRpm = 0;
+
+function clearDyno() {
+  dynoBins = {}; dynoMaxHp = 0; dynoMaxTq = 0; dynoMaxRpm = 0; dynoMinRpm = Infinity;
+  dynoPeakHp = 0; dynoPeakHpRpm = 0; dynoPeakTq = 0; dynoPeakTqRpm = 0;
+  dCtx.clearRect(0, 0, dynoCanvas.width, dynoCanvas.height);
+  document.getElementById('dyno-pts').textContent = '0';
+  document.getElementById('dyno-peak-hp').textContent = '--';
+  document.getElementById('dyno-peak-tq').textContent = '--';
+  document.getElementById('dyno-peak-rpm-hp').textContent = '--';
+  document.getElementById('dyno-peak-rpm-tq').textContent = '--';
+  document.getElementById('dyno-info').textContent = '(拉转通过各挡后绘制)';
+}
+window.clearDyno = clearDyno;
+
+function addDynoSample(rpm, hp, tq) {
+  if (rpm < 100 || hp < 0.5) return; // idle / no throttle
+  const bin = Math.round(rpm / RPM_BIN) * RPM_BIN;
+  if (!dynoBins[bin]) dynoBins[bin] = { hpSum: 0, tqSum: 0, count: 0 };
+  const b = dynoBins[bin];
+  b.hpSum += hp; b.tqSum += tq; b.count++;
+}
+
+function drawDyno() {
+  const dpr = window.devicePixelRatio || 1;
+  if (dynoCanvas.width !== dynoCanvas.clientWidth * dpr) {
+    dynoCanvas.width = dynoCanvas.clientWidth * dpr;
+    dynoCanvas.height = dynoCanvas.clientHeight * dpr;
+  }
+  const W = dynoCanvas.width, H = dynoCanvas.height;
+  dCtx.clearRect(0, 0, W, H);
+
+  const bins = Object.keys(dynoBins).map(Number).sort((a,b) => a-b);
+  if (bins.length < 3) return;
+
+  document.getElementById('dyno-info').textContent = '';
+  let totalSamples = 0;
+
+  // compute averages and find peaks
+  const data = [];
+  dynoMaxHp = 0; dynoMaxTq = 0; dynoPeakHp = 0; dynoPeakTq = 0;
+  for (const rpm of bins) {
+    const b = dynoBins[rpm];
+    const hp = b.hpSum / b.count;
+    const tq = b.tqSum / b.count;
+    data.push({ rpm, hp, tq });
+    totalSamples += b.count;
+    if (hp > dynoMaxHp) dynoMaxHp = hp;
+    if (tq > dynoMaxTq) dynoMaxTq = tq;
+    if (hp > dynoPeakHp) { dynoPeakHp = hp; dynoPeakHpRpm = rpm; }
+    if (tq > dynoPeakTq) { dynoPeakTq = tq; dynoPeakTqRpm = rpm; }
+  }
+
+  document.getElementById('dyno-pts').textContent = totalSamples;
+  document.getElementById('dyno-peak-hp').textContent = dynoPeakHp.toFixed(0);
+  document.getElementById('dyno-peak-rpm-hp').textContent = dynoPeakHpRpm;
+  document.getElementById('dyno-peak-tq').textContent = dynoPeakTq.toFixed(0);
+  document.getElementById('dyno-peak-rpm-tq').textContent = dynoPeakTqRpm;
+
+  dynoMinRpm = bins[0]; dynoMaxRpm = bins[bins.length - 1];
+  const rpmRange = dynoMaxRpm - dynoMinRpm || 1;
+  const hpCeil = Math.ceil(dynoMaxHp / 50) * 50 || 100;
+  const tqCeil = Math.ceil(dynoMaxTq / 50) * 50 || 100;
+
+  const pad = { l: 55*dpr, r: 55*dpr, t: 20*dpr, b: 30*dpr };
+  const plotW = W - pad.l - pad.r;
+  const plotH = H - pad.t - pad.b;
+
+  function xPos(rpm) { return pad.l + (rpm - dynoMinRpm) / rpmRange * plotW; }
+  function yHp(hp) { return pad.t + plotH - (hp / hpCeil) * plotH; }
+  function yTq(tq) { return pad.t + plotH - (tq / tqCeil) * plotH; }
+
+  // grid lines
+  dCtx.strokeStyle = '#21262d';
+  dCtx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.t + plotH * i / 5;
+    dCtx.beginPath(); dCtx.moveTo(pad.l, y); dCtx.lineTo(W - pad.r, y); dCtx.stroke();
+  }
+  for (let rpm = Math.ceil(dynoMinRpm/1000)*1000; rpm <= dynoMaxRpm; rpm += 1000) {
+    const x = xPos(rpm);
+    dCtx.beginPath(); dCtx.moveTo(x, pad.t); dCtx.lineTo(x, pad.t + plotH); dCtx.stroke();
+  }
+
+  // axis labels
+  dCtx.font = `${10*dpr}px sans-serif`;
+  dCtx.textAlign = 'center';
+  dCtx.fillStyle = '#8b949e';
+  for (let rpm = Math.ceil(dynoMinRpm/1000)*1000; rpm <= dynoMaxRpm; rpm += 1000) {
+    dCtx.fillText(rpm, xPos(rpm), H - 8*dpr);
+  }
+  // HP labels (left)
+  dCtx.textAlign = 'right';
+  dCtx.fillStyle = '#f85149';
+  for (let i = 0; i <= 5; i++) {
+    const v = hpCeil * (5 - i) / 5;
+    dCtx.fillText(v.toFixed(0), pad.l - 6*dpr, pad.t + plotH * i / 5 + 4*dpr);
+  }
+  // Torque labels (right)
+  dCtx.textAlign = 'left';
+  dCtx.fillStyle = '#39d2c0';
+  for (let i = 0; i <= 5; i++) {
+    const v = tqCeil * (5 - i) / 5;
+    dCtx.fillText(v.toFixed(0), W - pad.r + 6*dpr, pad.t + plotH * i / 5 + 4*dpr);
+  }
+
+  // draw HP curve
+  dCtx.strokeStyle = '#f85149';
+  dCtx.lineWidth = 2.5 * dpr;
+  dCtx.lineJoin = 'round';
+  dCtx.beginPath();
+  data.forEach((d, i) => { const x = xPos(d.rpm), y = yHp(d.hp); i === 0 ? dCtx.moveTo(x, y) : dCtx.lineTo(x, y); });
+  dCtx.stroke();
+
+  // draw Torque curve
+  dCtx.strokeStyle = '#39d2c0';
+  dCtx.beginPath();
+  data.forEach((d, i) => { const x = xPos(d.rpm), y = yTq(d.tq); i === 0 ? dCtx.moveTo(x, y) : dCtx.lineTo(x, y); });
+  dCtx.stroke();
+
+  // peak markers
+  dCtx.fillStyle = '#f85149';
+  const pxHp = xPos(dynoPeakHpRpm), pyHp = yHp(dynoPeakHp);
+  dCtx.beginPath(); dCtx.arc(pxHp, pyHp, 4*dpr, 0, Math.PI*2); dCtx.fill();
+  dCtx.font = `bold ${10*dpr}px sans-serif`;
+  dCtx.textAlign = 'center';
+  dCtx.fillText(`${dynoPeakHp.toFixed(0)} HP`, pxHp, pyHp - 8*dpr);
+
+  dCtx.fillStyle = '#39d2c0';
+  const pxTq = xPos(dynoPeakTqRpm), pyTq = yTq(dynoPeakTq);
+  dCtx.beginPath(); dCtx.arc(pxTq, pyTq, 4*dpr, 0, Math.PI*2); dCtx.fill();
+  dCtx.fillText(`${dynoPeakTq.toFixed(0)} Nm`, pxTq, pyTq - 8*dpr);
+
+  // axis titles
+  dCtx.font = `${9*dpr}px sans-serif`;
+  dCtx.fillStyle = '#f85149';
+  dCtx.textAlign = 'left';
+  dCtx.fillText('HP', 4*dpr, pad.t + 10*dpr);
+  dCtx.fillStyle = '#39d2c0';
+  dCtx.textAlign = 'right';
+  dCtx.fillText('Nm', W - 4*dpr, pad.t + 10*dpr);
+  dCtx.fillStyle = '#8b949e';
+  dCtx.textAlign = 'center';
+  dCtx.fillText('RPM', W/2, H - 2*dpr);
+}
+
+// ---- 3D Track Map (Three.js) ----
+const tContainer = document.getElementById('three-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d1117);
+const camera = new THREE.PerspectiveCamera(50, tContainer.clientWidth / tContainer.clientHeight, 1, 50000);
+camera.position.set(200, 300, 200);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(tContainer.clientWidth, tContainer.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+tContainer.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.1;
+controls.maxDistance = 20000;
+
+// lights
+scene.add(new THREE.AmbientLight(0x404040, 2));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+dirLight.position.set(500, 1000, 500);
+scene.add(dirLight);
+
+// grid
+const gridH = new THREE.GridHelper(2000, 40, 0x21262d, 0x21262d);
+scene.add(gridH);
+
+// track line
+const MAX_3D_PTS = 20000;
+const trackGeo = new THREE.BufferGeometry();
+const trackPositions = new Float32Array(MAX_3D_PTS * 3);
+const trackColors = new Float32Array(MAX_3D_PTS * 3);
+trackGeo.setAttribute('position', new THREE.BufferAttribute(trackPositions, 3));
+trackGeo.setAttribute('color', new THREE.BufferAttribute(trackColors, 3));
+const trackMat = new THREE.LineBasicMaterial({ vertexColors: true, linewidth: 2 });
+const trackLine = new THREE.Line(trackGeo, trackMat);
+scene.add(trackLine);
+
+// car marker (cone)
+const carGeo = new THREE.ConeGeometry(4, 12, 8);
+carGeo.rotateX(Math.PI / 2);
+const carMat = new THREE.MeshPhongMaterial({ color: 0xff4444, emissive: 0x661111 });
+const carMesh = new THREE.Mesh(carGeo, carMat);
+scene.add(carMesh);
+
+// car trail glow
+const glowGeo = new THREE.SphereGeometry(6, 8, 8);
+const glowMat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.3 });
+const glowMesh = new THREE.Mesh(glowGeo, glowMat);
+scene.add(glowMesh);
+
+let pts3d = [];
+let minY3d = Infinity, maxY3d = -Infinity;
+let centerX = 0, centerZ = 0;
+let needsRecenter = true;
+const SAMPLE_3D = 3;
+
+function speedToRGB(spd, maxSpd) {
+  const t = Math.min(spd / Math.max(maxSpd, 1), 1);
+  if (t < 0.33) return { r: 0.23 + t/0.33*0.59, g: 0.73 - t/0.33*0.13, b: 0.31 - t/0.33*0.18 };
+  if (t < 0.66) { const p=(t-0.33)/0.33; return { r: 0.82+p*0.15, g: 0.6-p*0.28, b: 0.13+p*0.15 }; }
+  return { r: 0.97, g: 0.32, b: 0.29 };
+}
+
+function add3dPt(x, y, z, speed) {
+  if (pts3d.length > 0) {
+    const l = pts3d[pts3d.length-1];
+    const dx=x-l.x, dy=y-l.y, dz=z-l.z;
+    if (dx*dx+dy*dy+dz*dz < SAMPLE_3D*SAMPLE_3D) return;
+  }
+  pts3d.push({x,y,z,speed});
+  if (pts3d.length > MAX_3D_PTS) pts3d.shift();
+  if (y < minY3d) minY3d = y;
+  if (y > maxY3d) maxY3d = y;
+}
+
+function update3dTrack(curX, curY, curZ, curYaw, curSpeed) {
+  let maxSpd = 0;
+  for (const p of pts3d) if (p.speed > maxSpd) maxSpd = p.speed;
+
+  // offset so track is centered around origin
+  if (needsRecenter && pts3d.length > 50) {
+    let sx=0,sz=0;
+    for (const p of pts3d) { sx+=p.x; sz+=p.z; }
+    centerX = sx/pts3d.length; centerZ = sz/pts3d.length;
+    needsRecenter = false;
+    controls.target.set(0, (minY3d+maxY3d)/2 - minY3d, 0);
+  }
+
+  for (let i = 0; i < pts3d.length; i++) {
+    const p = pts3d[i];
+    trackPositions[i*3]   = p.x - centerX;
+    trackPositions[i*3+1] = p.y - minY3d;
+    trackPositions[i*3+2] = p.z - centerZ;
+    const c = speedToRGB(p.speed, maxSpd);
+    trackColors[i*3] = c.r; trackColors[i*3+1] = c.g; trackColors[i*3+2] = c.b;
+  }
+  trackGeo.setDrawRange(0, pts3d.length);
+  trackGeo.attributes.position.needsUpdate = true;
+  trackGeo.attributes.color.needsUpdate = true;
+
+  // car
+  const cx = curX - centerX, cy = curY - minY3d, cz = curZ - centerZ;
+  carMesh.position.set(cx, cy, cz);
+  carMesh.rotation.y = -curYaw;
+  glowMesh.position.set(cx, cy, cz);
+
+  // update grid to match altitude
+  gridH.position.y = 0;
+
+  document.getElementById('map3d-info').textContent = pts3d.length > 10 ? '' : '(行驶后生成)';
+  document.getElementById('alt-range').textContent = (maxY3d - minY3d).toFixed(1);
+  document.getElementById('p3x').textContent = curX.toFixed(0);
+  document.getElementById('p3y').textContent = curY.toFixed(0);
+  document.getElementById('p3z').textContent = curZ.toFixed(0);
+}
+
+function animate3d() {
+  requestAnimationFrame(animate3d);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate3d();
+
+window.addEventListener('resize', () => {
+  const w = tContainer.clientWidth, h = tContainer.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+// expose clearTrack3d
+window.clearTrack3d = function() { pts3d = []; minY3d = Infinity; maxY3d = -Infinity; needsRecenter = true; };
+
+let ws;
+function connect(){
+  ws=new WebSocket(WS_URL);
+  ws.onopen=()=>{document.getElementById('ws-st').textContent='WS 已连接';document.getElementById('ws-st').className='pill st-on'};
+  ws.onclose=()=>{document.getElementById('ws-st').textContent='WS 断开';document.getElementById('ws-st').className='pill st-off';setTimeout(connect,2000)};
+  ws.onerror=()=>{};
+  ws.onmessage=(msg)=>{
+    const e=JSON.parse(msg.data);
+    switch(e.type){
+      case'telemetry':handleTel(e);break;
+      case'axis':
+        if(e.axis===STEER_AXIS)hwWheel(e.value);
+        if(e.axis===PEDAL.throttle)hwPedal('throttle',e.value);
+        if(e.axis===PEDAL.brake)hwPedal('brake',e.value);
+        if(e.axis===PEDAL.clutch)hwPedal('clutch',e.value);
+        break;
+      case'button_down':document.getElementById('btn-'+e.button)?.classList.add('active');addLog(e);break;
+      case'button_up':document.getElementById('btn-'+e.button)?.classList.remove('active');addLog(e);break;
+      case'hat':addLog(e);break;
+      case'connected':initBtns(e.buttons);break;
+      case'race_start':
+        clearTrack();
+        if(window.clearTrack3d)window.clearTrack3d();
+        if(window.clearDyno)window.clearDyno();
+        break;
+    }
+  };
+}
+connect();
+
+// ── Learned Power Curves + Auto-Shift Status ──
+const pcurveCanvas = document.getElementById('pcurve-canvas');
+const pcCtx = pcurveCanvas.getContext('2d');
+
+let lastAutoShiftStatus = null;
+
+function drawPowerCurves(status) {
+  if (!status || !status.cars) return;
+  const car = status.cars[status.currentCar];
+  if (!car) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  if (pcurveCanvas.width !== pcurveCanvas.clientWidth * dpr) {
+    pcurveCanvas.width = pcurveCanvas.clientWidth * dpr;
+    pcurveCanvas.height = pcurveCanvas.clientHeight * dpr;
+  }
+  const W = pcurveCanvas.width, H = pcurveCanvas.height;
+  pcCtx.clearRect(0, 0, W, H);
+
+  const curve = car.powerCurve || [];
+  const gearNums = Object.keys(car.gears || {}).map(Number).filter(g => g >= 1).sort((a,b) => a-b);
+
+  if (curve.length < 3) {
+    pcCtx.fillStyle = '#8b949e';
+    pcCtx.font = `${14*dpr}px sans-serif`;
+    pcCtx.textAlign = 'center';
+    pcCtx.fillText('全油门行驶以生成发动机功率曲线...', W/2, H/2);
+    document.getElementById('pcurve-info').textContent = `(${car.totalSamples || 0} 个样本，需要更多全油门数据)`;
+    document.getElementById('pcurve-gears').textContent = `曲线：${car.powerBins || 0} 个区间`;
+    document.getElementById('pcurve-peak').textContent = '峰值：--';
+    return;
+  }
+
+  document.getElementById('pcurve-info').textContent = '';
+
+  // Find global ranges
+  let globalMinRpm = Infinity, globalMaxRpm = 0, globalMaxHp = 0;
+  for (const pt of curve) {
+    if (pt.rpm < globalMinRpm) globalMinRpm = pt.rpm;
+    if (pt.rpm > globalMaxRpm) globalMaxRpm = pt.rpm;
+    if (pt.hp > globalMaxHp) globalMaxHp = pt.hp;
+  }
+
+  const rpmRange = globalMaxRpm - globalMinRpm || 1;
+  const hpCeil = Math.ceil(globalMaxHp / 50) * 50 || 100;
+
+  const pad = { l: 55*dpr, r: 20*dpr, t: 24*dpr, b: 36*dpr };
+  const plotW = W - pad.l - pad.r;
+  const plotH = H - pad.t - pad.b;
+
+  function xPos(rpm) { return pad.l + (rpm - globalMinRpm) / rpmRange * plotW; }
+  function yHp(hp) { return pad.t + plotH - (hp / hpCeil) * plotH; }
+
+  // Grid
+  pcCtx.strokeStyle = '#21262d';
+  pcCtx.lineWidth = 1;
+  for (let i = 0; i <= 5; i++) {
+    const y = pad.t + plotH * i / 5;
+    pcCtx.beginPath(); pcCtx.moveTo(pad.l, y); pcCtx.lineTo(W - pad.r, y); pcCtx.stroke();
+  }
+  for (let rpm = Math.ceil(globalMinRpm/1000)*1000; rpm <= globalMaxRpm; rpm += 1000) {
+    const x = xPos(rpm);
+    pcCtx.beginPath(); pcCtx.moveTo(x, pad.t); pcCtx.lineTo(x, pad.t + plotH); pcCtx.stroke();
+  }
+
+  // Axis labels
+  pcCtx.font = `${10*dpr}px sans-serif`;
+  pcCtx.textAlign = 'center';
+  pcCtx.fillStyle = '#8b949e';
+  for (let rpm = Math.ceil(globalMinRpm/1000)*1000; rpm <= globalMaxRpm; rpm += 1000) {
+    pcCtx.fillText(rpm, xPos(rpm), H - 10*dpr);
+  }
+  pcCtx.textAlign = 'right';
+  pcCtx.fillStyle = '#8b949e';
+  for (let i = 0; i <= 5; i++) {
+    const v = hpCeil * (5 - i) / 5;
+    pcCtx.fillText(v.toFixed(0), pad.l - 6*dpr, pad.t + plotH * i / 5 + 4*dpr);
+  }
+  pcCtx.font = `${9*dpr}px sans-serif`;
+  pcCtx.fillStyle = '#8b949e';
+  pcCtx.textAlign = 'left';
+  pcCtx.fillText('HP', 4*dpr, pad.t + 10*dpr);
+  pcCtx.textAlign = 'center';
+  pcCtx.fillText('RPM', W/2, H - 2*dpr);
+
+  // Draw the shared engine curve. Engine output by RPM is gear-independent.
+  pcCtx.strokeStyle = '#58a6ff';
+  pcCtx.lineWidth = 2.5 * dpr;
+  pcCtx.lineJoin = 'round';
+  pcCtx.beginPath();
+  for (let i = 0; i < curve.length; i++) {
+    const x = xPos(curve[i].rpm), y = yHp(curve[i].hp);
+    i === 0 ? pcCtx.moveTo(x, y) : pcCtx.lineTo(x, y);
+  }
+  pcCtx.stroke();
+
+  const peakHp = car.peakHp || 0;
+  const peakRpm = car.peakHpRpm || 0;
+  if (peakHp > 0 && peakRpm > 0) {
+    pcCtx.fillStyle = '#58a6ff';
+    pcCtx.beginPath(); pcCtx.arc(xPos(peakRpm), yHp(peakHp), 3*dpr, 0, Math.PI*2); pcCtx.fill();
+  }
+
+  function lookupCurveHp(rpm) {
+    if (rpm < curve[0].rpm || rpm > curve[curve.length - 1].rpm) return null;
+    for (let i = 1; i < curve.length; i++) {
+      if (curve[i-1].rpm <= rpm && curve[i].rpm >= rpm) {
+        const span = curve[i].rpm - curve[i-1].rpm;
+        const t = span > 0 ? (rpm - curve[i-1].rpm) / span : 0;
+        return curve[i-1].hp + t * (curve[i].hp - curve[i-1].hp);
+      }
+    }
+    return null;
+  }
+
+  // Show shift points as ▼ markers on the RPM axis
+  // For each gear pair with ratios, compute the crossover RPM
+  for (let idx = 0; idx < gearNums.length - 1; idx++) {
+    const gLow = gearNums[idx];
+    const gHigh = gearNums[idx + 1];
+    const ratioLow = car.gears[gLow].ratio;
+    const ratioHigh = car.gears[gHigh].ratio;
+    if (!ratioLow || !ratioHigh) continue;
+
+    // Find crossover: where shifting from gLow to gHigh gives equal power
+    // At RPM_low in gLow, the RPM in gHigh would be RPM_low * (ratioHigh / ratioLow)
+    let crossoverRpm = null;
+    for (let i = 1; i < curve.length; i++) {
+      const rpmLow = curve[i].rpm;
+      const hpLow = curve[i].hp;
+      const rpmInHigh = rpmLow * ratioHigh / ratioLow;
+      const hpHigh = lookupCurveHp(rpmInHigh);
+      if (hpHigh !== null && hpHigh >= hpLow && (i === 1 || curve[i-1].hp > (hpHigh - 5))) {
+        crossoverRpm = rpmLow;
+        break;
+      }
+    }
+
+    if (crossoverRpm) {
+      const cx = xPos(crossoverRpm);
+      // Draw shift marker
+      pcCtx.fillStyle = '#ffffff';
+      pcCtx.font = `${12*dpr}px sans-serif`;
+      pcCtx.textAlign = 'center';
+      pcCtx.fillText('▼', cx, pad.t - 2*dpr);
+      // Vertical dashed line
+      pcCtx.strokeStyle = '#ffffff44';
+      pcCtx.lineWidth = 1;
+      pcCtx.setLineDash([4*dpr, 4*dpr]);
+      pcCtx.beginPath(); pcCtx.moveTo(cx, pad.t); pcCtx.lineTo(cx, pad.t + plotH); pcCtx.stroke();
+      pcCtx.setLineDash([]);
+      // Label
+      pcCtx.fillStyle = '#ffffffcc';
+      pcCtx.font = `${8*dpr}px sans-serif`;
+      pcCtx.fillText(`${gLow}→${gHigh} @${crossoverRpm}`, cx, pad.t + plotH + 12*dpr);
+    }
+  }
+
+  // Info text
+  document.getElementById('pcurve-gears').textContent = `曲线：${car.powerBins || curve.length} 个区间 | 挡位：${gearNums.map(g => `G${g}`).join(', ')}`;
+  document.getElementById('pcurve-peak').textContent = `峰值：${peakHp.toFixed(0)} HP @ ${peakRpm} RPM`;
+}
+
+function updateAutoShiftUI(status) {
+  if (!status) return;
+  lastAutoShiftStatus = status;
+
+  document.getElementById('as-algo').textContent = `- ${status.algorithm || '未知'}`;
+
+  const enabledEl = document.getElementById('as-enabled');
+  enabledEl.textContent = status.enabled ? '开启' : '关闭';
+  enabledEl.style.color = status.enabled ? 'var(--green)' : 'var(--red)';
+
+  document.getElementById('as-car').textContent = status.currentCar || '--';
+  document.getElementById('as-block-up').textContent = status.blockUpshift ? '是' : '否';
+  document.getElementById('as-block-up').style.color = status.blockUpshift ? 'var(--red)' : 'var(--dim)';
+  document.getElementById('as-block-dn').textContent = status.blockDownshift ? '是' : '否';
+  document.getElementById('as-block-dn').style.color = status.blockDownshift ? 'var(--red)' : 'var(--dim)';
+
+  const car = status.cars?.[status.currentCar];
+  if (car) {
+    document.getElementById('as-samples').textContent = car.totalSamples || 0;
+    document.getElementById('as-shifts').textContent = car.totalShifts || 0;
+
+    // Fuel-cut display
+    const fcEl = document.getElementById('as-fuelcut');
+    if (car.fuelCutRpm) {
+      fcEl.textContent = `${car.fuelCutRpm} RPM（置信度 ${(car.fuelCutConfidence * 100).toFixed(0)}%）`;
+      fcEl.style.color = 'var(--yellow)';
+    } else {
+      fcEl.textContent = `未检测到（使用 ${car.maxRpm * 0.97 | 0} RPM）`;
+      fcEl.style.color = 'var(--dim)';
+    }
+
+    // Mode: power-curve or redline
+    const modeEl = document.getElementById('as-mode');
+    const gc = car.gearComplete || {};
+    const allComplete = Object.values(gc).filter(v => v).length;
+    const totalGears = Object.keys(gc).length;
+    if (allComplete >= totalGears - 1 && totalGears >= 3) {
+      modeEl.textContent = '功率曲线';
+      modeEl.style.color = 'var(--green)';
+    } else {
+      modeEl.textContent = `红线模式（学习中 ${allComplete}/${totalGears} 挡）`;
+      modeEl.style.color = 'var(--yellow)';
+    }
+
+    // Per-gear status
+    const gearStatusParts = [];
+    for (const [g, info] of Object.entries(car.gears || {})) {
+      const complete = gc[g];
+      const icon = complete ? '✓' : '…';
+      const color = complete ? 'var(--green)' : 'var(--dim)';
+      const ratio = info.ratio ? info.ratio.toFixed(2) : `${info.ratioSamples || 0}r`;
+      gearStatusParts.push(`<span style="color:${color}">G${g}${icon}(${ratio})</span>`);
+    }
+    document.getElementById('as-gear-status').innerHTML = gearStatusParts.join(' ');
+  }
+
+  // Shift log
+  if (status.recentShifts) {
+    const logEl = document.getElementById('as-log');
+    logEl.innerHTML = '';
+    for (const line of status.recentShifts.slice(-20)) {
+      const div = document.createElement('div');
+      const isUp = line.includes('UP:');
+      const isDn = line.includes('DN:');
+      const isManual = line.includes('MANUAL');
+      div.style.color = isManual ? 'var(--yellow)' : isUp ? 'var(--green)' : isDn ? 'var(--red)' : 'var(--dim)';
+      div.textContent = translateShiftLogLine(line);
+      logEl.appendChild(div);
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+function translateShiftLogLine(line) {
+  return String(line)
+    .replace(/\bUP:/g, '升挡：')
+    .replace(/\bDN:/g, '降挡：')
+    .replace(/\bMANUAL\b/g, '手动')
+    .replace(/\bAUTO\b/g, '自动')
+    .replace(/\bblocked\b/gi, '已禁止')
+    .replace(/\bshift\b/gi, '换挡')
+    .replace(/\bgear\b/gi, '挡位');
+}
+
+// Fetch auto-shift status periodically (includes power curves)
+let asStatusInterval = null;
+function startAutoShiftFetch() {
+  if (asStatusInterval) return;
+  asStatusInterval = setInterval(async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/autoshift/status`);
+      const data = await resp.json();
+      updateAutoShiftUI(data);
+      drawPowerCurves(data);
+
+      // Also update gear ratios from the same data
+      const car = data.cars?.[data.currentCar];
+      if (car?.gears) {
+        const ratios = {};
+        for (const [g, info] of Object.entries(car.gears)) {
+          if (info.ratio) ratios[Number(g)] = info.ratio;
+        }
+        setGearRatios(ratios);
+      }
+    } catch {}
+  }, 2000);
+}
+startAutoShiftFetch();
+
+// ── vJoy Gear Binding Panel ──
+const KEY_AGENT_URL = `${API_BASE}/key-agent`;
+const GEAR_DEFS = [
+  { gear: -1, label: 'R', sublabel: '倒档' },
+  { gear: 1, label: '1', sublabel: '1档' },
+  { gear: 2, label: '2', sublabel: '2档' },
+  { gear: 3, label: '3', sublabel: '3档' },
+  { gear: 4, label: '4', sublabel: '4档' },
+  { gear: 5, label: '5', sublabel: '5档' },
+  { gear: 6, label: '6', sublabel: '6档' },
+  { gear: 7, label: '7', sublabel: '7档' },
+  { gear: 8, label: '8', sublabel: '8档' },
+  { gear: 9, label: '9', sublabel: '9档' },
+  { gear: 10, label: '10', sublabel: '10档' },
+  { action: 'clutch', label: 'CL', sublabel: '离合' },
+];
+
+const gearPanel = document.getElementById('gear-panel');
+const vjoyStatus = document.getElementById('vjoy-status');
+const asVjoyHeld = document.getElementById('as-vjoy-held');
+
+function gearFromVjoyHeldBtn(btn) {
+  if (btn === 1) return -1;
+  if (btn >= 2 && btn <= 11) return btn - 1;
+  return null;
+}
+
+function formatGearLabel(gear) {
+  if (gear === -1) return 'R';
+  if (gear == null) return '--';
+  return `G${gear}`;
+}
+
+function updateVjoyHeldUI(st) {
+  const heldGear = gearFromVjoyHeldBtn(st?.vjoyHeldBtn ?? -1);
+  const isHeld = heldGear !== null;
+  asVjoyHeld.textContent = isHeld ? `${formatGearLabel(heldGear)}（按钮 ${st.vjoyHeldBtn}）` : '无';
+  asVjoyHeld.style.color = isHeld ? 'var(--green)' : 'var(--dim)';
+
+  for (const btn of gearPanel.querySelectorAll('.gear-btn')) {
+    btn.classList.toggle('active', btn.dataset.gear && isHeld && Number(btn.dataset.gear) === heldGear);
+  }
+}
+
+async function refreshVjoyStatus() {
+  try {
+    const res = await fetch(`${KEY_AGENT_URL}/status`);
+    const st = await res.json();
+    updateVjoyHeldUI(st);
+    if (st.vjoyAvailable) {
+      vjoyStatus.innerHTML = `<span class="ok">✓</span> vJoy 就绪 - 方式 ${st.method}，保持 ${asVjoyHeld.textContent}`;
+    } else {
+      vjoyStatus.innerHTML = `<span class="err">⚠</span> vJoy 不可用 - 正在使用键盘方式 ${st.method}`;
+    }
+  } catch {
+    asVjoyHeld.textContent = '离线';
+    asVjoyHeld.style.color = 'var(--red)';
+    for (const btn of gearPanel.querySelectorAll('.gear-btn')) btn.classList.remove('active');
+    vjoyStatus.innerHTML = `<span class="err">✗</span> 按键代理离线 (${KEY_AGENT_URL})`;
+  }
+}
+
+for (const def of GEAR_DEFS) {
+  const btn = document.createElement('button');
+  btn.className = `gear-btn${def.action === 'clutch' ? ' clutch-btn' : ''}`;
+  btn.innerHTML = `${def.label}<span class="g-label">${def.sublabel}</span>`;
+  if (def.gear != null) btn.dataset.gear = String(def.gear);
+  btn.addEventListener('click', async () => {
+    if (def.gear != null) btn.classList.add('active');
+    try {
+      const path = def.action === 'clutch' ? 'clutch' : `gear/${def.gear}`;
+      const res = await fetch(`${KEY_AGENT_URL}/${path}`);
+      const txt = await res.text();
+      vjoyStatus.innerHTML = `<span class="ok">✓</span> 已发送${def.action === 'clutch' ? '离合' : `${def.label} 挡`} - ${txt}`;
+      refreshVjoyStatus();
+    } catch (e) {
+      vjoyStatus.innerHTML = `<span class="err">✗</span> 失败：${e.message}`;
+    }
+  });
+  gearPanel.appendChild(btn);
+}
+
+refreshVjoyStatus();
+setInterval(refreshVjoyStatus, 1000);
+
+// ── Persistent Local Settings ──
+const cfgShiftMode = document.getElementById('cfg-shift-mode');
+const cfgVjoyPath = document.getElementById('cfg-vjoy-path');
+const cfgCooldown = document.getElementById('cfg-cooldown');
+const cfgSave = document.getElementById('cfg-save');
+const cfgStatus = document.getElementById('cfg-status');
+
+async function loadSettings() {
+  try {
+    const res = await fetch(`${API_BASE}/config`);
+    const cfg = await res.json();
+    cfgShiftMode.value = cfg.shiftMode || 'vjoy';
+    cfgVjoyPath.value = cfg.vjoyPath || '';
+    cfgCooldown.value = cfg.manualCooldownSec ?? 10;
+    cfgStatus.textContent = cfg.configPath ? `已保存于 ${cfg.configPath}` : '设置已加载';
+    cfgStatus.style.color = 'var(--dim)';
+  } catch (e) {
+    cfgStatus.textContent = `配置加载失败：${e.message}`;
+    cfgStatus.style.color = 'var(--red)';
+  }
+}
+
+async function saveSettings() {
+  cfgSave.disabled = true;
+  try {
+    const payload = {
+      shiftMode: cfgShiftMode.value,
+      vjoyPath: cfgVjoyPath.value.trim(),
+      manualCooldownSec: Number(cfgCooldown.value),
+    };
+    const res = await fetch(`${API_BASE}/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const cfg = await res.json();
+    cfgStatus.textContent = cfg.configPath ? `已保存于 ${cfg.configPath}` : '已保存';
+    cfgStatus.style.color = 'var(--green)';
+    refreshVjoyStatus();
+  } catch (e) {
+    cfgStatus.textContent = `保存失败：${e.message}`;
+    cfgStatus.style.color = 'var(--red)';
+  } finally {
+    cfgSave.disabled = false;
+  }
+}
+
+cfgSave.addEventListener('click', saveSettings);
+loadSettings();
+</script>
+</body>
+</html>

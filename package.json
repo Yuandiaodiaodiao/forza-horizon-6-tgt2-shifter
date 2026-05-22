@@ -1,0 +1,15 @@
+{
+  "name": "tgt2-telemetry",
+  "version": "1.0.0",
+  "description": "Forza Horizon 6 T-GT II manual/automatic hybrid shifter and telemetry dashboard",
+  "scripts": {
+    "app": "bun run src/app.ts",
+    "server": "bun run src/server.ts",
+    "proxy": "bun run src/proxy.ts",
+    "dev": "bun run src/proxy.ts",
+    "build:win": "bun build ./src/app.ts --compile --target=bun-windows-x64 --outfile dist/tgt2-telemetry.exe"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
