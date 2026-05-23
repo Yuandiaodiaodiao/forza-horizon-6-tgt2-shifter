@@ -9,9 +9,12 @@
 import { LOG_PATH, logFatalStartupError, setupLogging } from "./logging";
 import { envNumber, envString } from "./env";
 import { openWindowsOverlay } from "./overlay";
+import { applyStartupUpdate, getBuildInfo } from "./updater";
 
 setupLogging();
 console.log(`  Log file: ${LOG_PATH}`);
+const build = getBuildInfo();
+console.log(`  Build: ${build.tag} ${build.sha}${build.time ? ` (${build.time})` : ""}`);
 
 function openDashboard() {
   const host = envString("TGT2_DASHBOARD_HOST", "127.0.0.1");
@@ -40,6 +43,7 @@ function createPowerCurveWorker() {
 }
 
 try {
+  if (await applyStartupUpdate()) await new Promise(() => {});
   await import("./key_agent");
   (globalThis as typeof globalThis & { __tgt2PowerCurveWorker?: Worker }).__tgt2PowerCurveWorker =
     createPowerCurveWorker();

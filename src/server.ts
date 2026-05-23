@@ -19,6 +19,7 @@ import { AdaptiveAutoShift } from "./autoshift";
 import { APP_DATA_DIR, CONFIG_PATH, loadConfig, updateConfig } from "./config";
 import { buildKeyAgentUrl, envBool, envNumber } from "./env";
 import { PowerCurvePipeline } from "./power_curve_pipeline";
+import { getBuildInfo } from "./updater";
 import dashboardHtml from "../dashboard.html" with { type: "text" };
 
 const DASHBOARD_HTML = dashboardHtml as unknown as string;
@@ -90,6 +91,10 @@ const server = Bun.serve<{ channel: "dashboard" | "overlay" }>({
 
     if (path === "/config" && req.method === "GET") {
       return Response.json({ ...loadConfig(), configPath: CONFIG_PATH }, { headers: cors });
+    }
+
+    if (path === "/version") {
+      return Response.json(getBuildInfo(), { headers: cors });
     }
 
     if (path === "/config" && req.method === "POST") {
