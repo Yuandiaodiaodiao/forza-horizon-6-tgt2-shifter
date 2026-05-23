@@ -11,12 +11,14 @@
  */
 
 import { parseArgs } from "util";
-import { dirname } from "node:path";
+import { appendFile, mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { WheelReader } from "./wheel";
 import { ForzaReceiver } from "./forza";
 import { AdaptiveAutoShift } from "./autoshift";
-import { CONFIG_PATH, loadConfig, updateConfig } from "./config";
+import { APP_DATA_DIR, CONFIG_PATH, loadConfig, updateConfig } from "./config";
 import { buildKeyAgentUrl, envBool, envNumber } from "./env";
+import { PowerCurvePipeline } from "./power_curve_pipeline";
 import dashboardHtml from "../dashboard.html" with { type: "text" };
 
 const DASHBOARD_HTML = dashboardHtml as unknown as string;
@@ -40,6 +42,10 @@ const TELEM_HZ  = parseInt(args["telem-hz"]!);
 const JOY_ID    = args["joy-id"] != null ? parseInt(args["joy-id"]) : process.env.TGT2_JOY_ID ? envNumber("TGT2_JOY_ID", 0) : undefined;
 const KEY_AGENT = buildKeyAgentUrl();
 const START_TIME = Date.now();
+const PIPELINE_LOG_PATH = join(process.env.LOCALAPPDATA ?? process.cwd(), "TGT2Telemetry", "logs", "pipeline.log");
+const MAX_WS_BUFFER_BYTES = envNumber("TGT2_WS_MAX_BUFFER_KB", 512) * 1024;
+const DISPATCH_PERIOD_MS = 1000 / TELEM_HZ;
+const DISPATCH_WAKE_MS = Math.max(1, Math.floor(DISPATCH_PERIOD_MS / 2));
 
 console.log("=".repeat(60));
 console.log("  T-GT II + Forza Server (Bun + TypeScript)");
@@ -49,12 +55,21 @@ console.log("=".repeat(60));
 // --- Auto-shift ---
 const autoShift = new AdaptiveAutoShift();
 autoShift.setEnabled(args["auto-shift"] ?? true);
+const powerCurveWorkerHost = globalThis as typeof globalThis & { __tgt2PowerCurveWorker?: Worker };
+const powerCurve = new PowerCurvePipeline(
+  join(APP_DATA_DIR, "data", "power-curves-worker.json"),
+  autoShift.getPowerCurveSeeds(),
+  powerCurveWorkerHost.__tgt2PowerCurveWorker
+);
+delete powerCurveWorkerHost.__tgt2PowerCurveWorker;
 console.log(`  Auto-shift: ${autoShift.isEnabled() ? "ON" : "OFF"}`);
+console.log("  Power curve: worker + shared snapshot (10 RPM consumer / 100 RPM overlay)");
 
 // --- WebSocket Server ---
 const clients = new Set<any>();
+const overlayClients = new Set<any>();
 
-const server = Bun.serve({
+const server = Bun.serve<{ channel: "dashboard" | "overlay" }>({
   port: WS_PORT,
   fetch(req, server) {
     const url = new URL(req.url);
@@ -63,6 +78,11 @@ const server = Bun.serve({
     const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET,POST,OPTIONS" };
 
     if (req.method === "OPTIONS") return new Response(null, { headers: cors });
+
+    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      const channel = path === "/overlay" ? "overlay" : "dashboard";
+      if (server.upgrade(req, { data: { channel } })) return;
+    }
 
     if (path === "/" || path === "/dashboard.html") {
       return new Response(DASHBOARD_HTML, { headers: { ...cors, "Content-Type": "text/html; charset=utf-8" } });
@@ -86,7 +106,11 @@ const server = Bun.serve({
 
     // HTTP API for auto-shift control
     if (path === "/autoshift/status") {
+      refreshPowerCurveSnapshot();
       return Response.json(autoShift.getStatus(), { headers: cors });
+    }
+    if (path === "/overlay/state") {
+      return Response.json(buildOverlayState(), { headers: cors });
     }
     if (path === "/autoshift/on") {
       autoShift.setEnabled(true);
@@ -101,17 +125,27 @@ const server = Bun.serve({
       return new Response(`OK:${autoShift.isEnabled() ? "ON" : "OFF"}`, { headers: cors });
     }
 
-    if (server.upgrade(req)) return;
     return new Response("T-GT II Server | /dashboard.html | /autoshift/status|on|off|toggle", { status: 200, headers: cors });
   },
   websocket: {
     open(ws) {
-      clients.add(ws);
-      console.log(`  WS client connected (${clients.size} total)`);
+      if (ws.data?.channel === "overlay") {
+        overlayClients.add(ws);
+        ws.send(JSON.stringify({ type: "overlay_model", ...buildOverlayModel() }));
+        console.log(`  Overlay WS connected (${overlayClients.size} total)`);
+      } else {
+        clients.add(ws);
+        console.log(`  Dashboard WS connected (${clients.size} total)`);
+      }
     },
     close(ws) {
-      clients.delete(ws);
-      console.log(`  WS client disconnected (${clients.size} total)`);
+      if (ws.data?.channel === "overlay") {
+        overlayClients.delete(ws);
+        console.log(`  Overlay WS disconnected (${overlayClients.size} total)`);
+      } else {
+        clients.delete(ws);
+        console.log(`  Dashboard WS disconnected (${clients.size} total)`);
+      }
     },
     message() {},
   },
@@ -119,10 +153,31 @@ const server = Bun.serve({
 
 console.log(`  WebSocket server on ws://0.0.0.0:${WS_PORT}`);
 
-function broadcast(json: string) {
-  for (const ws of clients) {
-    try { ws.send(json); } catch { clients.delete(ws); }
+function sendToChannel(channel: "dashboard" | "overlay", connections: Set<any>, json: string) {
+  for (const ws of connections) {
+    try {
+      const buffered = ws.getBufferedAmount();
+      stats.maxWsBufferedBytes = Math.max(stats.maxWsBufferedBytes, buffered);
+      if (buffered > MAX_WS_BUFFER_BYTES) {
+        stats.slowClientDisconnects++;
+        pipelineLog(`slow-client channel=${channel} buffered=${buffered} max=${MAX_WS_BUFFER_BYTES}`);
+        ws.close(1013, "telemetry client too slow");
+        connections.delete(ws);
+        continue;
+      }
+      ws.send(json);
+    } catch {
+      connections.delete(ws);
+    }
   }
+}
+
+function broadcast(json: string) {
+  sendToChannel("dashboard", clients, json);
+}
+
+function broadcastOverlay(json: string) {
+  sendToChannel("overlay", overlayClients, json);
 }
 
 async function setRaceStartGear() {
@@ -178,8 +233,37 @@ let lastTelemGear = 1;
 let lastKeyAgentGear = 0;
 let lastDistance = -1;
 let lastLapNumber = -1;
+let latestTelemetry: Record<string, any> | null = null;
+let lastOverlayModelAt = 0;
+let lastOverlayCarOrdinal = 0;
 let pendingTelemetry: Record<string, any> | null = null;
 let telemetryDecisionLocked = false;
+let capturedTelemetry: Record<string, any> | null = null;
+let captureRevision = 0;
+let dispatchedRevision = 0;
+let frameSequence = 0;
+let nextDispatchDueAt = performance.now();
+const stats = {
+  captured: 0,
+  captureOverwrites: 0,
+  dispatched: 0,
+  idleTicks: 0,
+  algorithmConsumed: 0,
+  algorithmOverwrites: 0,
+  algorithmSlowFrames: 0,
+  maxAlgorithmMs: 0,
+  slowClientDisconnects: 0,
+  maxWsBufferedBytes: 0,
+  maxDispatchDelayMs: 0,
+};
+let lastDispatchTickAt = performance.now();
+
+function pipelineLog(message: string) {
+  appendFile(PIPELINE_LOG_PATH, `[${new Date().toISOString()}] ${message}\r\n`, () => {});
+}
+
+mkdirSync(dirname(PIPELINE_LOG_PATH), { recursive: true });
+pipelineLog(`start dispatchHz=${TELEM_HZ} maxWsBufferBytes=${MAX_WS_BUFFER_BYTES}`);
 
 async function processLatestTelemetry() {
   if (telemetryDecisionLocked) return;
@@ -189,7 +273,15 @@ async function processLatestTelemetry() {
     while (pendingTelemetry) {
       const evt = pendingTelemetry;
       pendingTelemetry = null;
+      stats.algorithmConsumed++;
+      refreshPowerCurveSnapshot();
+      const algorithmStartedAt = performance.now();
       const result = await autoShift.update(evt as any);
+      const algorithmMs = performance.now() - algorithmStartedAt;
+      stats.maxAlgorithmMs = Math.max(stats.maxAlgorithmMs, algorithmMs);
+      if (algorithmMs > DISPATCH_PERIOD_MS) stats.algorithmSlowFrames++;
+      const modelNeedsRefresh = evt.car_ordinal !== lastOverlayCarOrdinal || Date.now() - lastOverlayModelAt >= 1000;
+      if (modelNeedsRefresh) broadcastOverlayModel();
 
       if (result.action) {
         broadcast(JSON.stringify({
@@ -258,6 +350,71 @@ async function proxyKeyAgent(req: Request, targetPath: string, cors: Record<stri
   }
 }
 
+function buildOverlayModel() {
+  const curveSnapshot = powerCurve.readLatest()?.car;
+  const status = autoShift.getOverlayStatus();
+  const car = status.car;
+  const overlayCurveCar = curveSnapshot && (!status.currentCar || curveSnapshot.carKey === status.currentCar)
+    ? curveSnapshot
+    : null;
+  return {
+    ts: Date.now() / 1000,
+    autoshift: {
+      enabled: status.enabled,
+      currentCar: status.currentCar,
+      blockUpshift: status.blockUpshift,
+      blockDownshift: status.blockDownshift,
+      lastShift: status.lastShift,
+    },
+    car: car || overlayCurveCar ? {
+      totalSamples: overlayCurveCar ? overlayCurveCar.totalSamples : car!.totalSamples,
+      powerBins: overlayCurveCar ? overlayCurveCar.powerBins : car!.powerBins,
+      peakHp: overlayCurveCar ? overlayCurveCar.peakHp : car!.peakHp,
+      peakHpRpm: overlayCurveCar ? overlayCurveCar.peakHpRpm : car!.peakHpRpm,
+      fuelCutRpm: car?.fuelCutRpm ?? null,
+      shiftTiming: car?.shiftTiming ?? null,
+      powerCurve: overlayCurveCar ? overlayCurveCar.overlayCurve : [],
+    } : null,
+  };
+}
+
+function refreshPowerCurveSnapshot() {
+  autoShift.applyPowerCurveSnapshot(powerCurve.readLatest());
+}
+
+function buildOverlayFrame(evt: Record<string, any>, seq = frameSequence) {
+  return {
+    type: "overlay_frame",
+    seq,
+    ts: evt.ts,
+    telemetry: {
+      rpm: evt.rpm ?? 0,
+      maxRpm: evt.max_rpm ?? 0,
+      idleRpm: evt.idle_rpm ?? 0,
+      gear: evt.gear ?? 0,
+      speedKmh: evt.speed_kmh ?? 0,
+      powerHp: evt.power_hp ?? 0,
+      torqueNm: evt.torque_nm ?? 0,
+      throttle: evt.accel != null ? evt.accel / 255 : 0,
+      brake: evt.brake != null ? evt.brake / 255 : 0,
+      carOrdinal: evt.car_ordinal ?? 0,
+    },
+  };
+}
+
+function broadcastOverlayModel() {
+  lastOverlayModelAt = Date.now();
+  lastOverlayCarOrdinal = latestTelemetry?.car_ordinal ?? 0;
+  broadcastOverlay(JSON.stringify({ type: "overlay_model", ...buildOverlayModel() }));
+}
+
+function buildOverlayState() {
+  return {
+    ...buildOverlayModel(),
+    telemetry: latestTelemetry ? buildOverlayFrame(latestTelemetry).telemetry : null,
+  };
+}
+
 async function handleRestart(req: Request, srv: any, cors: Record<string, string>) {
   if (req.method !== "POST" && req.method !== "GET") {
     return new Response("Method Not Allowed", { status: 405, headers: cors });
@@ -277,6 +434,7 @@ async function handleRestart(req: Request, srv: any, cors: Record<string, string
   const restartArgs = Array.isArray(body.args) ? body.args.map(String) : process.argv.slice(2);
   const cwd = dirname(exePath);
 
+  powerCurve.stop();
   autoShift.saveAll();
   console.log(`  ADMIN: restart requested from ${ip || "local"} -> ${exePath}`);
 
@@ -303,43 +461,96 @@ function quoteCmd(value: string) {
 }
 
 const forza = new ForzaReceiver(UDP_PORT, TELEM_HZ, (evt) => {
-  broadcast(JSON.stringify(evt));
-
-  // Detect new race/session: distance resets or lap number drops
-  if (evt.type === "telemetry") {
-    const dist = evt.distance ?? 0;
-    const lap = evt.lap_number ?? 0;
-    if (lastDistance > 100 && dist < 10) {
-      broadcast(JSON.stringify({ type: "race_start", ts: Date.now() / 1000 }));
-      console.log("  [race] New race detected (distance reset)");
-      setRaceStartGear();
-    } else if (lastLapNumber > 0 && lap === 0 && lastLapNumber > lap) {
-      broadcast(JSON.stringify({ type: "race_start", ts: Date.now() / 1000 }));
-      console.log("  [race] New race detected (lap reset)");
-      setRaceStartGear();
-    }
-    lastDistance = dist;
-    lastLapNumber = lap;
-    if (evt.gear >= 1 && evt.gear <= 10) lastTelemGear = evt.gear;
-    autoShift.noteTelemetryGear(evt.gear);
-    if (evt.gear !== lastKeyAgentGear) {
-      lastKeyAgentGear = evt.gear;
-      fetch(`${KEY_AGENT}/telem/${evt.gear}`).catch(() => {});
-    }
-  }
-
-  if (evt.type === "telemetry") {
-    pendingTelemetry = evt;
-    void processLatestTelemetry();
-  }
+  if (evt.type === "telemetry") captureTelemetryFrame(evt);
 });
 
-console.log(`  Forza UDP on port ${UDP_PORT}, broadcast at ${TELEM_HZ} Hz`);
+setInterval(dispatchCapturedTelemetry, DISPATCH_WAKE_MS);
+setInterval(() => {
+  const ageMs = capturedTelemetry ? Date.now() - (capturedTelemetry.ts * 1000) : -1;
+  const pending = captureRevision - dispatchedRevision;
+  pipelineLog(
+    `captured=${stats.captured} dispatched=${stats.dispatched} captureReplaced=${stats.captureOverwrites} ` +
+    `algorithm=${stats.algorithmConsumed} algorithmReplaced=${stats.algorithmOverwrites} algorithmSlow=${stats.algorithmSlowFrames} ` +
+    `maxAlgorithmMs=${stats.maxAlgorithmMs.toFixed(1)} pending=${pending} ` +
+    `lastInputAgeMs=${ageMs.toFixed(0)} dashClients=${clients.size} overlayClients=${overlayClients.size} ` +
+    `maxWsBuffered=${stats.maxWsBufferedBytes} slowDisconnects=${stats.slowClientDisconnects} ` +
+    `maxDispatchDelayMs=${stats.maxDispatchDelayMs.toFixed(1)}`
+  );
+  stats.maxWsBufferedBytes = 0;
+  stats.maxDispatchDelayMs = 0;
+  stats.maxAlgorithmMs = 0;
+}, 2_000);
+
+console.log(`  Forza UDP on port ${UDP_PORT}, aggregate/distribute at ${TELEM_HZ} Hz`);
+console.log(`  Pipeline log: ${PIPELINE_LOG_PATH}`);
 console.log("  Waiting for Forza telemetry data...\n");
 
-// --- Graceful shutdown: persist car data ---
-process.on("SIGINT", () => { autoShift.saveAll(); process.exit(0); });
-process.on("SIGTERM", () => { autoShift.saveAll(); process.exit(0); });
+// UDP capture is latest-wins. The 60Hz distributor emits only fresh frames,
+// so downstream consumers cannot receive old frames after input stops.
+function captureTelemetryFrame(evt: Record<string, any>) {
+  stats.captured++;
+  if (captureRevision !== dispatchedRevision) stats.captureOverwrites++;
+  capturedTelemetry = evt;
+  captureRevision++;
+}
+
+function dispatchCapturedTelemetry() {
+  const tickAt = performance.now();
+  stats.maxDispatchDelayMs = Math.max(stats.maxDispatchDelayMs, tickAt - lastDispatchTickAt - DISPATCH_WAKE_MS);
+  lastDispatchTickAt = tickAt;
+
+  if (tickAt < nextDispatchDueAt) return;
+  if (!capturedTelemetry || captureRevision === dispatchedRevision) {
+    stats.idleTicks++;
+    return;
+  }
+
+  nextDispatchDueAt = tickAt + DISPATCH_PERIOD_MS;
+  dispatchedRevision = captureRevision;
+  frameSequence++;
+  stats.dispatched++;
+  const evt = capturedTelemetry;
+  latestTelemetry = evt;
+  broadcast(JSON.stringify({ ...evt, seq: frameSequence }));
+  broadcastOverlay(JSON.stringify(buildOverlayFrame(evt, frameSequence)));
+  powerCurve.submit(evt);
+
+  const dist = evt.distance ?? 0;
+  const lap = evt.lap_number ?? 0;
+  if (lastDistance > 100 && dist < 10) {
+    broadcast(JSON.stringify({ type: "race_start", ts: Date.now() / 1000 }));
+    console.log("  [race] New race detected (distance reset)");
+    setRaceStartGear();
+  } else if (lastLapNumber > 0 && lap === 0 && lastLapNumber > lap) {
+    broadcast(JSON.stringify({ type: "race_start", ts: Date.now() / 1000 }));
+    console.log("  [race] New race detected (lap reset)");
+    setRaceStartGear();
+  }
+  lastDistance = dist;
+  lastLapNumber = lap;
+  if (evt.gear >= 1 && evt.gear <= 10) lastTelemGear = evt.gear;
+  autoShift.noteTelemetryGear(evt.gear, evt.clutch);
+  if (evt.gear !== lastKeyAgentGear) {
+    lastKeyAgentGear = evt.gear;
+    fetch(`${KEY_AGENT}/telem/${evt.gear}`).catch(() => {});
+  }
+
+  if (pendingTelemetry) stats.algorithmOverwrites++;
+  pendingTelemetry = evt;
+  void processLatestTelemetry();
+}
+
+// --- Graceful shutdown: give the worker time to flush its 1 RPM source bins ---
+let shutdownStarted = false;
+function shutdown() {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  powerCurve.stop();
+  autoShift.saveAll();
+  setTimeout(() => process.exit(0), 100);
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 process.on("exit", () => { autoShift.saveAll(); });
 
 // --- Helpers ---

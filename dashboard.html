@@ -1032,6 +1032,16 @@ window.addEventListener('resize', () => {
 window.clearTrack3d = function() { pts3d = []; minY3d = Infinity; maxY3d = -Infinity; needsRecenter = true; };
 
 let ws;
+let latestTelemetryFrame = null;
+function renderLatestTelemetry(){
+  if(latestTelemetryFrame){
+    const frame=latestTelemetryFrame;
+    latestTelemetryFrame=null;
+    handleTel(frame);
+  }
+  requestAnimationFrame(renderLatestTelemetry);
+}
+requestAnimationFrame(renderLatestTelemetry);
 function connect(){
   ws=new WebSocket(WS_URL);
   ws.onopen=()=>{document.getElementById('ws-st').textContent='WS 已连接';document.getElementById('ws-st').className='pill st-on'};
@@ -1040,7 +1050,7 @@ function connect(){
   ws.onmessage=(msg)=>{
     const e=JSON.parse(msg.data);
     switch(e.type){
-      case'telemetry':handleTel(e);break;
+      case'telemetry':latestTelemetryFrame=e;break;
       case'axis':
         if(e.axis===STEER_AXIS)hwWheel(e.value);
         if(e.axis===PEDAL.throttle)hwPedal('throttle',e.value);

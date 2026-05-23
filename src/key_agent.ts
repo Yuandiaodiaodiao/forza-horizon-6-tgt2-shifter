@@ -65,6 +65,7 @@ const VJOY_BTN_CLUTCH = 12;
 let vjoyAvailable = false;
 let vjoy: any = null;
 let vjoyDllPath = "";
+let vjoyButtonCount = 0;
 
 // Auto-detect system drive from SYSTEMROOT or common locations
 const SYS_DRIVE = (process.env.SYSTEMROOT ?? "C:\\Windows").slice(0, 2);
@@ -106,6 +107,7 @@ function releaseVjoyDevice() {
   vjoyAvailable = false;
   vjoy = null;
   vjoyDllPath = "";
+  vjoyButtonCount = 0;
   vjoyHeldBtn = -1;
 }
 
@@ -144,11 +146,14 @@ function initVjoy(configuredPath = "") {
         }
         vjoy.symbols.ResetVJD(VJOY_DEVICE_ID);
         const nBtns = vjoy.symbols.GetVJDButtonNumber(VJOY_DEVICE_ID) as number;
+        vjoyButtonCount = nBtns;
         console.log(`  vJoy: acquired device ${VJOY_DEVICE_ID} (${nBtns} buttons)`);
         vjoyAvailable = nBtns >= VJOY_BTN_CLUTCH;
         if (!vjoyAvailable) {
           console.log(`  vJoy: need >= ${VJOY_BTN_CLUTCH} buttons, got ${nBtns}. Configure in vJoyConf!`);
         } else {
+          vjoyReleaseAll();
+          vjoyHoldGear(1);
           console.log(`  vJoy DLL: ${vjoyDllPath}`);
         }
       } else {
@@ -184,12 +189,13 @@ function vjoyHoldGear(gear: number) {
     : -1;
   if (newBtn < 0 || newBtn === vjoyHeldBtn) return;
   // Release old button
+
   if (vjoyHeldBtn >= 0) {
     vjoy.symbols.SetBtn(0, VJOY_DEVICE_ID, vjoyHeldBtn);
   }
   // Press clutch, hold the new gear, then release clutch immediately.
-  vjoy.symbols.SetBtn(1, VJOY_DEVICE_ID, VJOY_BTN_CLUTCH);
   vjoy.symbols.SetBtn(1, VJOY_DEVICE_ID, newBtn);
+  vjoy.symbols.SetBtn(1, VJOY_DEVICE_ID, VJOY_BTN_CLUTCH);
   vjoy.symbols.SetBtn(0, VJOY_DEVICE_ID, VJOY_BTN_CLUTCH);
   vjoyHeldBtn = newBtn;
   console.log(`  vJoy: clutch btn ${VJOY_BTN_CLUTCH} + hold btn ${newBtn} (gear ${gear})`);
@@ -197,11 +203,12 @@ function vjoyHoldGear(gear: number) {
 
 function vjoyReleaseAll() {
   if (!vjoy || !vjoyAvailable) return;
-  if (vjoyHeldBtn >= 0) {
-    vjoy.symbols.SetBtn(0, VJOY_DEVICE_ID, vjoyHeldBtn);
-    console.log(`  vJoy: released btn ${vjoyHeldBtn}`);
-    vjoyHeldBtn = -1;
+  let released = 0;
+  for (let btn = 1; btn <= vjoyButtonCount; btn++) {
+    if (vjoy.symbols.SetBtn(0, VJOY_DEVICE_ID, btn)) released++;
   }
+  vjoyHeldBtn = -1;
+  console.log(`  vJoy: released all ${released} buttons`);
 }
 
 function vjoySetGear(gear: number): boolean {
@@ -258,6 +265,7 @@ type Method = "A" | "B" | "C" | "D" | "E";
 const initialConfig = loadConfig();
 initVjoy(initialConfig.vjoyPath);
 let method: Method = initialConfig.shiftMode === "vjoy" && vjoyAvailable ? "E" : "C";
+let currentGear = vjoyHeldBtn === VJOY_BTN_GEAR_BASE ? 1 : 0;
 
 const heldKeys = new Set<string>();
 
@@ -307,8 +315,6 @@ async function pressKey(name: string, holdMs: number = 60) {
     keybdEvent(k.vk, k.scan, true);
   }
 }
-
-let currentGear = 0;
 
 // Up/down sequential shift — vJoy direct gear if available, keyboard fallback
 function doShift(direction: "up" | "down") {

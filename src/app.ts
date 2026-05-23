@@ -8,6 +8,7 @@
 
 import { LOG_PATH, logFatalStartupError, setupLogging } from "./logging";
 import { envNumber, envString } from "./env";
+import { openWindowsOverlay } from "./overlay";
 
 setupLogging();
 console.log(`  Log file: ${LOG_PATH}`);
@@ -33,10 +34,18 @@ function openDashboard() {
   }, 800);
 }
 
+function createPowerCurveWorker() {
+  if (/(\$bunfs|~BUN)\/root/i.test(decodeURIComponent(import.meta.url))) return new Worker("./power_curve_worker.ts");
+  return new Worker("./src/power_curve_worker.ts");
+}
+
 try {
   await import("./key_agent");
+  (globalThis as typeof globalThis & { __tgt2PowerCurveWorker?: Worker }).__tgt2PowerCurveWorker =
+    createPowerCurveWorker();
   await import("./server");
   openDashboard();
+  openWindowsOverlay();
 } catch (e) {
   logFatalStartupError(e);
   console.error("Startup failed:", e);

@@ -10,7 +10,13 @@ Windows (${TGT2_WINDOWS_HOST})                 Mac (${TGT2_MAC_HOST})
 │ ├─ UDP :6688 (Forza)       │               │ dashboard.html       │
 │ ├─ Adaptive Auto-Shift     │               │ served on HTTP 9999  │
 │ │  └─ power-curve lookup   │               └──────────────────────┘
-│ └─ WS broadcast            │
+│ ├─ 60Hz latest-frame fanout│
+│ │  ├─ dashboard WS         │
+│ │  ├─ overlay WS /overlay  │
+│ │  ├─ autoshift            │
+│ │  └─ power-curve Worker   │
+│ │     └─ shared snapshots  │
+│ └─ WPF native overlay      │
 │                            │
 │ start_key_agent.bat        │
 │ ┌─ bun run src/key_agent.ts│
@@ -27,6 +33,7 @@ Windows (${TGT2_WINDOWS_HOST})                 Mac (${TGT2_MAC_HOST})
 - **Joystick**: `bun:ffi` -> `winmm.dll joyGetPosEx`
 - **Telemetry**: `node:dgram` UDP socket
 - **WebSocket**: built-in `Bun.serve`
+- **Native Overlay**: PowerShell/WPF, launched from the compiled app
 - **Gear Control**: `bun:ffi` -> `vJoyInterface.dll`
 - **Key Injection**: `bun:ffi` -> `user32.dll SendInput` / `keybd_event`
 
@@ -35,9 +42,15 @@ Windows (${TGT2_WINDOWS_HOST})                 Mac (${TGT2_MAC_HOST})
 | File | Purpose |
 |------|---------|
 | `src/server.ts` | Windows combined server entry point |
+| `src/app.ts` | Single-process Windows app entry point |
+| `src/overlay.ts` | Starts the Windows native floating overlay |
+| `src/windows_overlay.ps1` | PowerShell/WPF overlay UI |
 | `src/wheel.ts` | winmm joystick reader |
 | `src/forza.ts` | Forza UDP telemetry parser |
 | `src/autoshift.ts` | First-principles power-curve auto-shift |
+| `src/power_curve_pipeline.ts` | Non-blocking shared snapshot reader / Worker input |
+| `src/power_curve_worker.ts` | Per-car 1 RPM curve learning and median aggregation |
+| `src/power_curve_types.ts` | Power curve snapshot and worker message contract |
 | `src/key_agent.ts` | vJoy/key input agent |
 | `src/proxy.ts` | Mac WebSocket relay proxy |
 | `dashboard.html` | Browser dashboard |
@@ -86,6 +99,66 @@ The active algorithm does not use a neural network. It is a direct physics looku
 - Larger threshold for downshift advantage
 - Directional manual paddle override
 
+## Telemetry Distribution
+
+The server must not queue historical telemetry for dashboard, overlay, or shifting:
+
+1. UDP capture replaces one latest-frame slot as packets arrive.
+2. A fixed `TGT2_TELEM_HZ` tick, normally `60`, distributes at most one newly captured frame.
+3. The same distributed frame fans out to the dashboard WebSocket, `/overlay` WebSocket, auto-shift consumer, and power-curve Worker.
+4. If no new UDP frame arrives, no telemetry frame is distributed. A display still advancing after input stops indicates an old build or client-side backlog.
+5. Each outbound frame has a monotonically increasing `seq`; clients can detect skipped or delayed frames without replaying stale data.
+
+WebSocket clients are bounded by `TGT2_WS_MAX_BUFFER_KB` (default `512`). Disconnect a slow client once its send buffer exceeds the limit rather than retaining historical telemetry in memory.
+
+### Power Curve Worker
+
+- The worker accepts only required scalar telemetry fields and maintains full-load power samples in 1 RPM bins per car.
+- Consumer snapshots use median aggregation through `1 -> 3 -> 10 RPM/bin`; overlay snapshots aggregate once more to `100 RPM/bin`.
+- Snapshots are published through double-buffered `SharedArrayBuffer` storage. Auto-shift and overlay read the most recent complete snapshot without waiting for curve recalculation.
+- Worker source bins persist in `data/power-curves-worker.json`; legacy auto-shift curve data seeds the worker when no worker-owned profile exists.
+
+### Pipeline Diagnostics
+
+The compiled Windows app writes server telemetry diagnostics to:
+
+```text
+%LOCALAPPDATA%\TGT2Telemetry\logs\pipeline.log
+```
+
+The WPF overlay writes receive/render diagnostics to:
+
+```text
+%LOCALAPPDATA%\TGT2Telemetry\logs\overlay.log
+```
+
+Interpret diagnostics as follows:
+
+- `captured` continuing to rise after a race means Forza is still sending input; it is not downstream replay.
+- `captured` stopped but `dispatched` rising is a distributor bug.
+- `captureReplaced` rising means UDP input exceeds the selected distribution rate; the system intentionally keeps only the newest frame.
+- `algorithmReplaced` rising means shift evaluation is slower than telemetry arrival and is consuming latest frames only.
+- `maxWsBuffered` rising or `slowDisconnects` increasing identifies a slow dashboard/overlay consumer.
+- `maxAlgorithmMs` above one telemetry period identifies algorithm/model generation blocking the real-time loop.
+- `maxDispatchDelayMs` reveals timer scheduling delays independently of WebSocket buffers.
+- Overlay `wireAgeMs` increasing identifies receive/render lag; `gaps` identifies skipped sequence numbers.
+
+## Windows Overlay
+
+- The native overlay is embedded in the compiled executable through `src/overlay.ts` and `src/windows_overlay.ps1`.
+- It connects directly to `ws://127.0.0.1:8765/overlay`; do not poll `/state` for live rendering.
+- Keep dashboard and overlay on separate WebSocket channels so a stalled UI cannot delay the other consumer.
+- For WPF transparency, use a transparent top-level window and change the alpha of the root panel brush. Changing `Window.Opacity` also fades chart/text and is not the desired background-opacity control.
+- Do not assume one WebSocket receive result is one JSON message. A learned power curve can fragment across frames; reassemble through `EndOfMessage` before parsing. Dropping fragments causes the overlay to remain on `Learning curve...` while `/overlay/state` already contains curve data.
+- Keep the WebSocket receive loop off the WPF `DispatcherTimer`. Use a background receive pump that overwrites latest model/frame snapshots; let the UI timer render only the newest available frame.
+- Send a reduced overlay-only power curve, currently capped near 160 representative points. The browser dashboard may retain full detail, but sending hundreds of points every model refresh delays the real-time overlay stream.
+
+### Windows Timing Notes
+
+- A nominal `setInterval(..., 17)` can behave near `32ms` on Windows, yielding roughly `30Hz` even while UDP capture receives `60Hz`.
+- For a `60Hz` output deadline, wake more frequently than the output period and publish only when the deadline is due. Do not rely on a rounded `17ms` interval as the cadence source.
+- Avoid building full status for every stored car from the overlay refresh path. Overlay model generation must query only the current car; expanding all historical curves can block telemetry processing for hundreds of milliseconds.
+
 ## Running
 
 ```bash
@@ -93,6 +166,12 @@ The active algorithm does not use a neural network. It is a direct physics looku
 set PATH=%PATH%;%TGT2_WINDOWS_BUN_BIN%
 cd /d %TGT2_WINDOWS_PROJECT_DIR%
 bun run src/server.ts
+
+# Windows — one-click app with browser + native overlay
+bun run src/app.ts
+
+# Compiled distributable exe (includes src/power_curve_worker.ts as a worker entrypoint)
+bun run build:win
 
 # Windows — key agent
 # Double-click: %TGT2_WINDOWS_PROJECT_DIR%\start_key_agent.bat
@@ -115,15 +194,26 @@ source .env
 set +a
 ```
 
-Upload active files with `scp` to both the project root docs/config and `src/` as needed:
+For development, upload active files with `scp` to both the project root docs/config and `src/` as needed:
 
 ```bash
 sshpass -p "$TGT2_WINDOWS_PASSWORD" scp -o StrictHostKeyChecking=no \
-  src/autoshift.ts src/server.ts src/key_agent.ts src/forza.ts src/wheel.ts \
+  src/autoshift.ts src/server.ts src/key_agent.ts src/forza.ts src/wheel.ts src/overlay.ts src/windows_overlay.ps1 \
   "$TGT2_WINDOWS_USER@$TGT2_WINDOWS_HOST:$TGT2_WINDOWS_PROJECT_DIR/src/"
 ```
 
 Restart only the server process on TCP 8765. Do not restart `key_agent` over SSH; it must remain in the interactive desktop session for vJoy/input injection.
+
+For end-user runs, compile and deploy the single executable:
+
+```bash
+bun run build:win
+sshpass -p "$TGT2_WINDOWS_PASSWORD" scp -o StrictHostKeyChecking=no \
+  dist/tgt2-telemetry.exe \
+  "$TGT2_WINDOWS_USER@$TGT2_WINDOWS_HOST:Desktop/tgt2-reader/dist/tgt2-telemetry.exe"
+```
+
+Use the remote-home-relative `Desktop/tgt2-reader/...` SCP path on this machine. Do not reuse an unquoted Windows backslash path loaded through shell `.env`; backslashes may be consumed and create a wrong destination directory.
 
 Reliable restart method:
 

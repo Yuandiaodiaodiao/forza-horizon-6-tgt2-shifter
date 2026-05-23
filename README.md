@@ -10,6 +10,9 @@ manual/automatic hybrid shifting strategy.
 # Windows one-click app (key agent + telemetry + dashboard)
 bun run src/app.ts
 
+# Disable browser or native overlay if needed
+bun run src/app.ts --no-dashboard --no-overlay
+
 # Build distributable Windows binary
 bun run build:win
 
@@ -51,6 +54,8 @@ The one-click exe writes startup and crash logs to:
 |------|---------|
 | `src/server.ts` | Windows combined server entry point |
 | `src/app.ts` | Single-process Windows app entry point |
+| `src/overlay.ts` | Starts the Windows native floating overlay |
+| `src/windows_overlay.ps1` | PowerShell/WPF overlay UI |
 | `src/config.ts` | INI-backed local app settings |
 | `src/wheel.ts` | winmm joystick reader |
 | `src/forza.ts` | Forza UDP telemetry parser |

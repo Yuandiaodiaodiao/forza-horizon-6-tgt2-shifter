@@ -88,12 +88,9 @@ function parseTelemetry(buf: Buffer): Record<string, any> | null {
 }
 
 export class ForzaReceiver {
-  private lastSend = 0;
-  private minInterval: number;
   private pktCount = 0;
 
-  constructor(port: number, hz: number, private onEvent: (evt: Record<string, any>) => void) {
-    this.minInterval = 1000 / hz;
+  constructor(port: number, _hz: number, private onEvent: (evt: Record<string, any>) => void) {
     const sock = createSocket("udp4");
     sock.on("message", (msg) => this.handlePacket(msg));
     sock.bind(port, "0.0.0.0");
@@ -104,10 +101,8 @@ export class ForzaReceiver {
     if (!pkt) return;
 
     this.pktCount++;
-    const now = Date.now();
-    if (now - this.lastSend < this.minInterval) return;
-    this.lastSend = now;
-
+    // The aggregation/distribution layer owns output frequency and latest-frame
+    // replacement. Capture never creates a second backlog here.
     this.onEvent(pkt);
 
     if (this.pktCount % 300 === 1) {
