@@ -264,7 +264,7 @@ function postMessageTap(vk: number, scan: number) {
 type Method = "A" | "B" | "C" | "D" | "E";
 const initialConfig = loadConfig();
 initVjoy(initialConfig.vjoyPath);
-let method: Method = initialConfig.shiftMode === "vjoy" && vjoyAvailable ? "E" : "C";
+let method: Method | "OFF" = initialConfig.shiftMode === "off" ? "OFF" : initialConfig.shiftMode === "vjoy" && vjoyAvailable ? "E" : "C";
 let currentGear = vjoyHeldBtn === VJOY_BTN_GEAR_BASE ? 1 : 0;
 
 const heldKeys = new Set<string>();
@@ -318,7 +318,9 @@ async function pressKey(name: string, holdMs: number = 60) {
 
 // Up/down sequential shift — vJoy direct gear if available, keyboard fallback
 function doShift(direction: "up" | "down") {
-  if (method === "E" && vjoyAvailable) {
+  if (method === "OFF") {
+    return;
+  } else if (method === "E" && vjoyAvailable) {
     const targetGear = direction === "up" ? currentGear + 1 : currentGear - 1;
     if (vjoySetGear(targetGear)) vjoyPulseClutch();
   } else {
@@ -383,6 +385,7 @@ const server = Bun.serve({
     if (cmd.startsWith("GEAR/HOLD/")) {
       const g = parseInt(cmd.split("/")[2]);
       if (!isNaN(g) && g >= -1 && g <= 10) {
+        if (method === "OFF") return R(`OK:HOLD:${g}:OFF`);
         if (method === "E" && vjoyAvailable) {
           vjoyHoldGear(g);
           return R(`OK:HOLD:${g}:VJOY`);
@@ -393,6 +396,7 @@ const server = Bun.serve({
 
     // /gear/release — release all held gear buttons (for manual override)
     if (cmd === "GEAR/RELEASE") {
+      if (method === "OFF") return R("OK:RELEASED:OFF");
       vjoyReleaseAll();
       return R("OK:RELEASED");
     }
@@ -445,6 +449,11 @@ const server = Bun.serve({
       updateConfig({ shiftMode: "keyboard" });
       return R("METHOD:KEYBOARD (SendInput atomic)");
     }
+    if (cmd === "METHOD/OFF") {
+      method = "OFF";
+      updateConfig({ shiftMode: "off" });
+      return R("METHOD:OFF (shift output disabled)");
+    }
 
     if (cmd === "CONFIG" && req.method === "GET") {
       return RJ({ ...loadConfig(), configPath: (await import("./config")).CONFIG_PATH });
@@ -453,17 +462,19 @@ const server = Bun.serve({
     if (cmd === "CONFIG" && req.method === "POST") {
       const body = await req.json().catch(() => ({})) as any;
       const patch: any = {};
-      if (body.shiftMode === "keyboard" || body.shiftMode === "vjoy") patch.shiftMode = body.shiftMode;
+      if (body.shiftMode === "keyboard" || body.shiftMode === "vjoy" || body.shiftMode === "off") patch.shiftMode = body.shiftMode;
       if (typeof body.vjoyPath === "string") patch.vjoyPath = body.vjoyPath;
       if (body.manualCooldownSec != null) patch.manualCooldownSec = Number(body.manualCooldownSec);
       const next = updateConfig(patch);
       if (typeof patch.vjoyPath === "string") initVjoy(next.vjoyPath);
-      method = next.shiftMode === "vjoy" && vjoyAvailable ? "E" : "C";
+      method = next.shiftMode === "off" ? "OFF" : next.shiftMode === "vjoy" && vjoyAvailable ? "E" : "C";
       return RJ({ ...next, method, vjoyAvailable, vjoyDllPath });
     }
 
     if (cmd === "STATUS") {
+      const config = loadConfig();
       return RJ({
+        shiftMode: config.shiftMode,
         method,
         vjoyAvailable,
         vjoyDllPath,
@@ -475,7 +486,7 @@ const server = Bun.serve({
     }
 
     return R(
-      "Commands: /up /down /gear/N /gear/hold/N /gear/release /clutch /throttle/on|off /brake/on|off /press/KEY/MS /release /status /config /method/A|B|C|D|E|KEYBOARD",
+      "Commands: /up /down /gear/N /gear/hold/N /gear/release /clutch /throttle/on|off /brake/on|off /press/KEY/MS /release /status /config /method/A|B|C|D|E|KEYBOARD|OFF",
       { status: 400 },
     );
   },

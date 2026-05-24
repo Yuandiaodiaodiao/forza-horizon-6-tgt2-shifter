@@ -159,9 +159,9 @@ header h1{font-size:1.1em;font-weight:600}
     </div>
   </div>
 
-  <!-- 齿比 -->
+  <!-- 挡位速度区间 -->
   <div class="card">
-    <h2>齿比</h2>
+    <h2>挡位速度区间</h2>
     <div id="gear-ratio-display" style="position:relative;height:160px;">
       <canvas id="ratio-canvas" width="300" height="160" style="width:100%;height:100%"></canvas>
     </div>
@@ -295,20 +295,6 @@ header h1{font-size:1.1em;font-weight:600}
     </div>
   </div>
 
-  <!-- 马力机图表：马力与扭矩随转速变化 -->
-  <div class="card span2">
-    <h2>马力机图表 <span style="font-weight:400;font-size:.9em;color:var(--dim)" id="dyno-info">(拉转通过各挡后绘制)</span></h2>
-    <canvas id="dyno-canvas" width="600" height="280" style="width:100%;background:#0d1117;border-radius:6px;border:1px solid var(--border)"></canvas>
-    <div class="sub" style="margin-top:6px">
-      <div class="sub-i"><span style="color:var(--red)">━</span> 马力 (HP)</div>
-      <div class="sub-i"><span style="color:var(--cyan)">━</span> 扭矩 (Nm)</div>
-      <div class="sub-i">样本 <span id="dyno-pts">0</span></div>
-      <div class="sub-i">峰值 <span id="dyno-peak-hp">--</span> HP @ <span id="dyno-peak-rpm-hp">--</span> RPM</div>
-      <div class="sub-i">峰值 <span id="dyno-peak-tq">--</span> Nm @ <span id="dyno-peak-rpm-tq">--</span> RPM</div>
-      <button onclick="window.clearDyno()" style="background:#21262d;color:var(--dim);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:.7em;cursor:pointer;margin-left:auto">清除</button>
-    </div>
-  </div>
-
   <!-- 3D 赛道地图 -->
   <div class="card span2">
     <h2>3D 赛道地图 <span style="font-weight:400;font-size:.9em;color:var(--dim)" id="map3d-info">(行驶后生成)</span></h2>
@@ -328,7 +314,6 @@ header h1{font-size:1.1em;font-weight:600}
     <div class="sub" style="margin-top:6px">
       <div class="sub-i" id="pcurve-gears">挡位：--</div>
       <div class="sub-i" id="pcurve-peak">峰值：--</div>
-      <div class="sub-i">换挡点显示为 <span style="color:#fff">▼</span> 标记</div>
     </div>
   </div>
 
@@ -353,6 +338,7 @@ header h1{font-size:1.1em;font-weight:600}
           <select id="cfg-shift-mode" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px">
             <option value="vjoy">vJoy 直接挡位</option>
             <option value="keyboard">键盘升/降挡</option>
+            <option value="off">关闭输出（只提醒）</option>
           </select>
           <label style="color:var(--dim)">vJoy 路径</label>
           <input id="cfg-vjoy-path" placeholder="C:\Program Files\vJoy 或 ...\vJoyInterface.dll" style="background:#0d1117;color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px;min-width:0">
@@ -520,11 +506,8 @@ function handleTel(d){
     document.getElementById('p-rr').textContent=d.puddle_depth[3].toFixed(2);
   }
   // Gear ratio display — update active gear
-  updateGearRatios(d.gear);
+  updateGearRatios(d.gear, d.speed_kmh);
 
-  // Dyno chart
-  addDynoSample(d.rpm, d.power_hp, d.torque_nm);
-  drawDyno();
   // 2D Track map
   addTrackPt(d.pos_x, d.pos_z, d.speed_kmh, d.brake);
   drawTrack(d.pos_x, d.pos_z, d.yaw);
@@ -540,31 +523,39 @@ function addLog(e){const log=document.getElementById('log'),div=document.createE
 
 setInterval(()=>{if(Date.now()-lastTel>3000&&lastTel>0){document.getElementById('tel-st').textContent='无遥测';document.getElementById('tel-st').className='pill st-off'}},1000);
 
-// ---- Gear Ratio Visualization ----
+// ---- Gear Speed Range Visualization ----
 const ratioCanvas = document.getElementById('ratio-canvas');
 const rCtx = ratioCanvas.getContext('2d');
+const MAX_FORWARD_GEAR = 10;
 let knownRatios = {};
-let currentGearForRatio = 1;
+let gearRangeCar = null;
+let currentGearForRatio = 0;
+let currentSpeedForRatio = 0;
 
-function updateGearRatios(telemetryGear) {
+function updateGearRatios(telemetryGear, speedKmh = currentSpeedForRatio) {
   currentGearForRatio = telemetryGear;
+  currentSpeedForRatio = speedKmh;
+  drawGearRatios();
 }
 
-function setGearRatios(ratios) {
+function setGearRatios(ratios, car = gearRangeCar) {
   knownRatios = ratios;
+  gearRangeCar = car;
   drawGearRatios();
 }
 
 function drawGearRatios() {
   const dpr = window.devicePixelRatio || 1;
-  if (ratioCanvas.width !== ratioCanvas.clientWidth * dpr) {
-    ratioCanvas.width = ratioCanvas.clientWidth * dpr;
-    ratioCanvas.height = ratioCanvas.clientHeight * dpr;
+  const targetW = Math.max(1, Math.floor(ratioCanvas.clientWidth * dpr));
+  const targetH = Math.max(1, Math.floor(ratioCanvas.clientHeight * dpr));
+  if (ratioCanvas.width !== targetW || ratioCanvas.height !== targetH) {
+    ratioCanvas.width = targetW;
+    ratioCanvas.height = targetH;
   }
   const W = ratioCanvas.width, H = ratioCanvas.height;
   rCtx.clearRect(0, 0, W, H);
 
-  const gears = Object.keys(knownRatios).map(Number).filter(g => g >= 1).sort((a, b) => a - b);
+  const gears = Object.keys(knownRatios).map(Number).filter(g => g >= 1 && g <= MAX_FORWARD_GEAR).sort((a, b) => a - b);
   if (gears.length < 1) {
     rCtx.fillStyle = '#8b949e';
     rCtx.font = `${12*dpr}px sans-serif`;
@@ -573,71 +564,110 @@ function drawGearRatios() {
     return;
   }
 
-  const maxRatio = Math.max(...gears.map(g => knownRatios[g]));
-  const pad = { l: 10*dpr, r: 10*dpr, t: 20*dpr, b: 28*dpr };
-  const usableW = W - pad.l - pad.r;
-  const usableH = H - pad.t - pad.b;
-  const barW = Math.min(usableW / (gears.length * 1.8), 40*dpr);
-  const gap = (usableW - barW * gears.length) / (gears.length + 1);
+  const car = gearRangeCar || {};
+  const radiusM = Number(car.wheelRadiusM) || 0;
+  const idleRpm = Number(car.idleRpm) || 0;
+  const maxRpm = Number(car.fuelCutRpm || car.maxRpm) || 0;
+  if (!radiusM || !maxRpm) {
+    rCtx.fillStyle = '#8b949e';
+    rCtx.font = `${12*dpr}px sans-serif`;
+    rCtx.textAlign = 'center';
+    rCtx.fillText('等待轮胎半径与发动机转速数据...', W/2, H/2);
+    document.getElementById('ratio-info').textContent = `已识别 ${gears.length} 个挡位，继续行驶以计算速度区间`;
+    return;
+  }
 
-  const accentColors = ['#58a6ff','#3fb950','#d29922','#f0883e','#f85149','#bc8cff','#39d2c0','#da7dae','#768390','#57ab5a'];
+  function speedAtRpm(gear, rpm) {
+    const ratio = knownRatios[gear];
+    if (!ratio || rpm <= 0) return 0;
+    const engineRadS = rpm * 2 * Math.PI / 60;
+    return engineRadS / ratio * radiusM * 3.6;
+  }
 
-  for (let i = 0; i < gears.length; i++) {
-    const g = gears[i];
-    const ratio = knownRatios[g];
-    const barH = (ratio / maxRatio) * usableH;
-    const x = pad.l + gap + i * (barW + gap);
-    const y = pad.t + usableH - barH;
-    const isActive = g === currentGearForRatio;
+  const ranges = gears.map(g => {
+    const learnedDownshift = Number(car.gears?.[g]?.downshiftSpeedKmh);
+    const min = Number.isFinite(learnedDownshift)
+      ? learnedDownshift
+      : g === 1 ? 0 : speedAtRpm(g, Math.max(idleRpm * 1.1, 1));
+    const max = speedAtRpm(g, maxRpm);
+    return { gear: g, min: Math.max(0, min), max: Math.max(0, max) };
+  }).filter(r => r.max > 0);
+  if (ranges.length < 1) return;
 
-    // Bar
-    const color = accentColors[i % accentColors.length];
-    rCtx.fillStyle = isActive ? color : color + '99';
+  const maxSpeed = Math.max(currentSpeedForRatio, ...ranges.map(r => r.max));
+  const axisMax = Math.max(20, Math.ceil(maxSpeed / 20) * 20);
+  const pad = { l: 30*dpr, r: 12*dpr, t: 10*dpr, b: 30*dpr };
+  const plotW = W - pad.l - pad.r;
+  const plotH = H - pad.t - pad.b;
+  const rowGap = Math.max(4*dpr, plotH * 0.08 / ranges.length);
+  const rowH = Math.max(8*dpr, (plotH - rowGap * (ranges.length - 1)) / ranges.length);
+  const xOf = speed => pad.l + clamp(speed / axisMax, 0, 1) * plotW;
+  const yOf = indexFromBottom => pad.t + plotH - rowH - indexFromBottom * (rowH + rowGap);
+
+  rCtx.strokeStyle = '#21262d';
+  rCtx.lineWidth = 1;
+  rCtx.font = `${9*dpr}px sans-serif`;
+  rCtx.textAlign = 'center';
+  rCtx.fillStyle = '#8b949e';
+  const tickStep = axisMax <= 120 ? 20 : axisMax <= 240 ? 40 : 60;
+  for (let v = 0; v <= axisMax; v += tickStep) {
+    const x = xOf(v);
+    rCtx.beginPath(); rCtx.moveTo(x, pad.t); rCtx.lineTo(x, pad.t + plotH + 4*dpr); rCtx.stroke();
+    rCtx.fillText(String(v), x, H - 10*dpr);
+  }
+
+  rCtx.strokeStyle = '#8b949e';
+  rCtx.beginPath(); rCtx.moveTo(pad.l, pad.t + plotH); rCtx.lineTo(W - pad.r, pad.t + plotH); rCtx.stroke();
+  rCtx.fillStyle = '#8b949e';
+  rCtx.textAlign = 'right';
+  rCtx.fillText('km/h', W - pad.r, H - 2*dpr);
+
+  const colors = ['#58a6ff','#3fb950','#d29922','#f0883e','#f85149','#bc8cff','#39d2c0','#da7dae','#768390','#57ab5a'];
+  ranges.forEach((range, index) => {
+    const isActive = range.gear === currentGearForRatio;
+    const color = colors[index % colors.length];
+    const y = yOf(index);
+    const x = xOf(range.min);
+    const w = Math.max(2*dpr, xOf(range.max) - x);
+
+    rCtx.fillStyle = isActive ? color : color + '88';
     rCtx.beginPath();
-    rCtx.roundRect(x, y, barW, barH, [4*dpr, 4*dpr, 0, 0]);
+    rCtx.roundRect(x, y, w, rowH, 4*dpr);
     rCtx.fill();
 
-    // Active glow
     if (isActive) {
       rCtx.shadowColor = color;
-      rCtx.shadowBlur = 12*dpr;
+      rCtx.shadowBlur = 10*dpr;
       rCtx.fillStyle = color;
       rCtx.beginPath();
-      rCtx.roundRect(x, y, barW, barH, [4*dpr, 4*dpr, 0, 0]);
+      rCtx.roundRect(x, y, w, rowH, 4*dpr);
       rCtx.fill();
       rCtx.shadowBlur = 0;
     }
 
-    // Ratio value on top
     rCtx.fillStyle = isActive ? '#fff' : '#8b949e';
-    rCtx.font = `${isActive ? 'bold ' : ''}${9*dpr}px sans-serif`;
-    rCtx.textAlign = 'center';
-    rCtx.fillText(ratio.toFixed(2), x + barW/2, y - 4*dpr);
+    rCtx.font = `${isActive ? 'bold ' : ''}${10*dpr}px sans-serif`;
+    rCtx.textAlign = 'right';
+    rCtx.fillText(String(range.gear), pad.l - 8*dpr, y + rowH * 0.72);
+  });
 
-    // Gear number below
-    rCtx.fillStyle = isActive ? '#fff' : '#8b949e';
-    rCtx.font = `${isActive ? 'bold ' : ''}${11*dpr}px sans-serif`;
-    rCtx.fillText(g === 0 ? 'R' : String(g), x + barW/2, H - 8*dpr);
-
-    // Step ratio (gear N / gear N+1)
-    if (i < gears.length - 1) {
-      const nextRatio = knownRatios[gears[i+1]];
-      if (nextRatio > 0) {
-        const step = (ratio / nextRatio).toFixed(2);
-        const midX = x + barW + gap/2;
-        rCtx.fillStyle = '#4d5566';
-        rCtx.font = `${7*dpr}px sans-serif`;
-        rCtx.fillText(`×${step}`, midX, pad.t + usableH + 2*dpr);
-      }
+  if (currentGearForRatio >= 1 && currentSpeedForRatio >= 0) {
+    const activeIndex = ranges.findIndex(r => r.gear === currentGearForRatio);
+    if (activeIndex >= 0) {
+      const x = xOf(currentSpeedForRatio);
+      const y = yOf(activeIndex) + rowH / 2;
+      rCtx.fillStyle = '#fff';
+      rCtx.strokeStyle = '#0d1117';
+      rCtx.lineWidth = 2*dpr;
+      rCtx.beginPath(); rCtx.arc(x, y, 5*dpr, 0, Math.PI * 2); rCtx.fill(); rCtx.stroke();
     }
   }
 
-  // Info
-  const finalDrive = gears.length >= 2 ? ` | 终传≈${(knownRatios[gears[gears.length-1]]).toFixed(2)}` : '';
-  document.getElementById('ratio-info').textContent = `已识别 ${gears.length} 个挡位${finalDrive}`;
+  document.getElementById('ratio-info').textContent = `已识别 ${ranges.length} 个挡位 | 极速约 ${axisMax.toFixed(0)} km/h | 当前 ${currentSpeedForRatio.toFixed(0)} km/h`;
 }
 
 // Gear ratios are now fetched via the autoshift status poller below
+window.addEventListener('resize', drawGearRatios);
 
 // ---- Track Map ----
 const trackCanvas = document.getElementById('track-canvas');
@@ -744,158 +774,6 @@ function drawTrack(curX, curZ, curYaw) {
   // glow on car pos
   tCtx.fillStyle = 'rgba(255,255,255,0.15)';
   tCtx.beginPath(); tCtx.arc(cx, cy, 14*dpr, 0, Math.PI*2); tCtx.fill();
-}
-
-// ---- Dyno Chart ----
-const dynoCanvas = document.getElementById('dyno-canvas');
-const dCtx = dynoCanvas.getContext('2d');
-const RPM_BIN = 50; // group data every 50 RPM
-let dynoBins = {}; // { rpmBin: { hpSum, tqSum, count } }
-let dynoMaxHp = 0, dynoMaxTq = 0, dynoMaxRpm = 0, dynoMinRpm = Infinity;
-let dynoPeakHp = 0, dynoPeakHpRpm = 0, dynoPeakTq = 0, dynoPeakTqRpm = 0;
-
-function clearDyno() {
-  dynoBins = {}; dynoMaxHp = 0; dynoMaxTq = 0; dynoMaxRpm = 0; dynoMinRpm = Infinity;
-  dynoPeakHp = 0; dynoPeakHpRpm = 0; dynoPeakTq = 0; dynoPeakTqRpm = 0;
-  dCtx.clearRect(0, 0, dynoCanvas.width, dynoCanvas.height);
-  document.getElementById('dyno-pts').textContent = '0';
-  document.getElementById('dyno-peak-hp').textContent = '--';
-  document.getElementById('dyno-peak-tq').textContent = '--';
-  document.getElementById('dyno-peak-rpm-hp').textContent = '--';
-  document.getElementById('dyno-peak-rpm-tq').textContent = '--';
-  document.getElementById('dyno-info').textContent = '(拉转通过各挡后绘制)';
-}
-window.clearDyno = clearDyno;
-
-function addDynoSample(rpm, hp, tq) {
-  if (rpm < 100 || hp < 0.5) return; // idle / no throttle
-  const bin = Math.round(rpm / RPM_BIN) * RPM_BIN;
-  if (!dynoBins[bin]) dynoBins[bin] = { hpSum: 0, tqSum: 0, count: 0 };
-  const b = dynoBins[bin];
-  b.hpSum += hp; b.tqSum += tq; b.count++;
-}
-
-function drawDyno() {
-  const dpr = window.devicePixelRatio || 1;
-  if (dynoCanvas.width !== dynoCanvas.clientWidth * dpr) {
-    dynoCanvas.width = dynoCanvas.clientWidth * dpr;
-    dynoCanvas.height = dynoCanvas.clientHeight * dpr;
-  }
-  const W = dynoCanvas.width, H = dynoCanvas.height;
-  dCtx.clearRect(0, 0, W, H);
-
-  const bins = Object.keys(dynoBins).map(Number).sort((a,b) => a-b);
-  if (bins.length < 3) return;
-
-  document.getElementById('dyno-info').textContent = '';
-  let totalSamples = 0;
-
-  // compute averages and find peaks
-  const data = [];
-  dynoMaxHp = 0; dynoMaxTq = 0; dynoPeakHp = 0; dynoPeakTq = 0;
-  for (const rpm of bins) {
-    const b = dynoBins[rpm];
-    const hp = b.hpSum / b.count;
-    const tq = b.tqSum / b.count;
-    data.push({ rpm, hp, tq });
-    totalSamples += b.count;
-    if (hp > dynoMaxHp) dynoMaxHp = hp;
-    if (tq > dynoMaxTq) dynoMaxTq = tq;
-    if (hp > dynoPeakHp) { dynoPeakHp = hp; dynoPeakHpRpm = rpm; }
-    if (tq > dynoPeakTq) { dynoPeakTq = tq; dynoPeakTqRpm = rpm; }
-  }
-
-  document.getElementById('dyno-pts').textContent = totalSamples;
-  document.getElementById('dyno-peak-hp').textContent = dynoPeakHp.toFixed(0);
-  document.getElementById('dyno-peak-rpm-hp').textContent = dynoPeakHpRpm;
-  document.getElementById('dyno-peak-tq').textContent = dynoPeakTq.toFixed(0);
-  document.getElementById('dyno-peak-rpm-tq').textContent = dynoPeakTqRpm;
-
-  dynoMinRpm = bins[0]; dynoMaxRpm = bins[bins.length - 1];
-  const rpmRange = dynoMaxRpm - dynoMinRpm || 1;
-  const hpCeil = Math.ceil(dynoMaxHp / 50) * 50 || 100;
-  const tqCeil = Math.ceil(dynoMaxTq / 50) * 50 || 100;
-
-  const pad = { l: 55*dpr, r: 55*dpr, t: 20*dpr, b: 30*dpr };
-  const plotW = W - pad.l - pad.r;
-  const plotH = H - pad.t - pad.b;
-
-  function xPos(rpm) { return pad.l + (rpm - dynoMinRpm) / rpmRange * plotW; }
-  function yHp(hp) { return pad.t + plotH - (hp / hpCeil) * plotH; }
-  function yTq(tq) { return pad.t + plotH - (tq / tqCeil) * plotH; }
-
-  // grid lines
-  dCtx.strokeStyle = '#21262d';
-  dCtx.lineWidth = 1;
-  for (let i = 0; i <= 5; i++) {
-    const y = pad.t + plotH * i / 5;
-    dCtx.beginPath(); dCtx.moveTo(pad.l, y); dCtx.lineTo(W - pad.r, y); dCtx.stroke();
-  }
-  for (let rpm = Math.ceil(dynoMinRpm/1000)*1000; rpm <= dynoMaxRpm; rpm += 1000) {
-    const x = xPos(rpm);
-    dCtx.beginPath(); dCtx.moveTo(x, pad.t); dCtx.lineTo(x, pad.t + plotH); dCtx.stroke();
-  }
-
-  // axis labels
-  dCtx.font = `${10*dpr}px sans-serif`;
-  dCtx.textAlign = 'center';
-  dCtx.fillStyle = '#8b949e';
-  for (let rpm = Math.ceil(dynoMinRpm/1000)*1000; rpm <= dynoMaxRpm; rpm += 1000) {
-    dCtx.fillText(rpm, xPos(rpm), H - 8*dpr);
-  }
-  // HP labels (left)
-  dCtx.textAlign = 'right';
-  dCtx.fillStyle = '#f85149';
-  for (let i = 0; i <= 5; i++) {
-    const v = hpCeil * (5 - i) / 5;
-    dCtx.fillText(v.toFixed(0), pad.l - 6*dpr, pad.t + plotH * i / 5 + 4*dpr);
-  }
-  // Torque labels (right)
-  dCtx.textAlign = 'left';
-  dCtx.fillStyle = '#39d2c0';
-  for (let i = 0; i <= 5; i++) {
-    const v = tqCeil * (5 - i) / 5;
-    dCtx.fillText(v.toFixed(0), W - pad.r + 6*dpr, pad.t + plotH * i / 5 + 4*dpr);
-  }
-
-  // draw HP curve
-  dCtx.strokeStyle = '#f85149';
-  dCtx.lineWidth = 2.5 * dpr;
-  dCtx.lineJoin = 'round';
-  dCtx.beginPath();
-  data.forEach((d, i) => { const x = xPos(d.rpm), y = yHp(d.hp); i === 0 ? dCtx.moveTo(x, y) : dCtx.lineTo(x, y); });
-  dCtx.stroke();
-
-  // draw Torque curve
-  dCtx.strokeStyle = '#39d2c0';
-  dCtx.beginPath();
-  data.forEach((d, i) => { const x = xPos(d.rpm), y = yTq(d.tq); i === 0 ? dCtx.moveTo(x, y) : dCtx.lineTo(x, y); });
-  dCtx.stroke();
-
-  // peak markers
-  dCtx.fillStyle = '#f85149';
-  const pxHp = xPos(dynoPeakHpRpm), pyHp = yHp(dynoPeakHp);
-  dCtx.beginPath(); dCtx.arc(pxHp, pyHp, 4*dpr, 0, Math.PI*2); dCtx.fill();
-  dCtx.font = `bold ${10*dpr}px sans-serif`;
-  dCtx.textAlign = 'center';
-  dCtx.fillText(`${dynoPeakHp.toFixed(0)} HP`, pxHp, pyHp - 8*dpr);
-
-  dCtx.fillStyle = '#39d2c0';
-  const pxTq = xPos(dynoPeakTqRpm), pyTq = yTq(dynoPeakTq);
-  dCtx.beginPath(); dCtx.arc(pxTq, pyTq, 4*dpr, 0, Math.PI*2); dCtx.fill();
-  dCtx.fillText(`${dynoPeakTq.toFixed(0)} Nm`, pxTq, pyTq - 8*dpr);
-
-  // axis titles
-  dCtx.font = `${9*dpr}px sans-serif`;
-  dCtx.fillStyle = '#f85149';
-  dCtx.textAlign = 'left';
-  dCtx.fillText('HP', 4*dpr, pad.t + 10*dpr);
-  dCtx.fillStyle = '#39d2c0';
-  dCtx.textAlign = 'right';
-  dCtx.fillText('Nm', W - 4*dpr, pad.t + 10*dpr);
-  dCtx.fillStyle = '#8b949e';
-  dCtx.textAlign = 'center';
-  dCtx.fillText('RPM', W/2, H - 2*dpr);
 }
 
 // ---- 3D Track Map (Three.js) ----
@@ -1064,7 +942,6 @@ function connect(){
       case'race_start':
         clearTrack();
         if(window.clearTrack3d)window.clearTrack3d();
-        if(window.clearDyno)window.clearDyno();
         break;
     }
   };
@@ -1174,61 +1051,6 @@ function drawPowerCurves(status) {
     pcCtx.beginPath(); pcCtx.arc(xPos(peakRpm), yHp(peakHp), 3*dpr, 0, Math.PI*2); pcCtx.fill();
   }
 
-  function lookupCurveHp(rpm) {
-    if (rpm < curve[0].rpm || rpm > curve[curve.length - 1].rpm) return null;
-    for (let i = 1; i < curve.length; i++) {
-      if (curve[i-1].rpm <= rpm && curve[i].rpm >= rpm) {
-        const span = curve[i].rpm - curve[i-1].rpm;
-        const t = span > 0 ? (rpm - curve[i-1].rpm) / span : 0;
-        return curve[i-1].hp + t * (curve[i].hp - curve[i-1].hp);
-      }
-    }
-    return null;
-  }
-
-  // Show shift points as ▼ markers on the RPM axis
-  // For each gear pair with ratios, compute the crossover RPM
-  for (let idx = 0; idx < gearNums.length - 1; idx++) {
-    const gLow = gearNums[idx];
-    const gHigh = gearNums[idx + 1];
-    const ratioLow = car.gears[gLow].ratio;
-    const ratioHigh = car.gears[gHigh].ratio;
-    if (!ratioLow || !ratioHigh) continue;
-
-    // Find crossover: where shifting from gLow to gHigh gives equal power
-    // At RPM_low in gLow, the RPM in gHigh would be RPM_low * (ratioHigh / ratioLow)
-    let crossoverRpm = null;
-    for (let i = 1; i < curve.length; i++) {
-      const rpmLow = curve[i].rpm;
-      const hpLow = curve[i].hp;
-      const rpmInHigh = rpmLow * ratioHigh / ratioLow;
-      const hpHigh = lookupCurveHp(rpmInHigh);
-      if (hpHigh !== null && hpHigh >= hpLow && (i === 1 || curve[i-1].hp > (hpHigh - 5))) {
-        crossoverRpm = rpmLow;
-        break;
-      }
-    }
-
-    if (crossoverRpm) {
-      const cx = xPos(crossoverRpm);
-      // Draw shift marker
-      pcCtx.fillStyle = '#ffffff';
-      pcCtx.font = `${12*dpr}px sans-serif`;
-      pcCtx.textAlign = 'center';
-      pcCtx.fillText('▼', cx, pad.t - 2*dpr);
-      // Vertical dashed line
-      pcCtx.strokeStyle = '#ffffff44';
-      pcCtx.lineWidth = 1;
-      pcCtx.setLineDash([4*dpr, 4*dpr]);
-      pcCtx.beginPath(); pcCtx.moveTo(cx, pad.t); pcCtx.lineTo(cx, pad.t + plotH); pcCtx.stroke();
-      pcCtx.setLineDash([]);
-      // Label
-      pcCtx.fillStyle = '#ffffffcc';
-      pcCtx.font = `${8*dpr}px sans-serif`;
-      pcCtx.fillText(`${gLow}→${gHigh} @${crossoverRpm}`, cx, pad.t + plotH + 12*dpr);
-    }
-  }
-
   // Info text
   document.getElementById('pcurve-gears').textContent = `曲线：${car.powerBins || curve.length} 个区间 | 挡位：${gearNums.map(g => `G${g}`).join(', ')}`;
   document.getElementById('pcurve-peak').textContent = `峰值：${peakHp.toFixed(0)} HP @ ${peakRpm} RPM`;
@@ -1334,9 +1156,10 @@ function startAutoShiftFetch() {
       if (car?.gears) {
         const ratios = {};
         for (const [g, info] of Object.entries(car.gears)) {
-          if (info.ratio) ratios[Number(g)] = info.ratio;
+          const gear = Number(g);
+          if (gear >= 1 && gear <= MAX_FORWARD_GEAR && info.ratio) ratios[gear] = info.ratio;
         }
-        setGearRatios(ratios);
+        setGearRatios(ratios, car);
       }
     } catch {}
   }, 2000);
@@ -1392,7 +1215,9 @@ async function refreshVjoyStatus() {
     const res = await fetch(`${KEY_AGENT_URL}/status`);
     const st = await res.json();
     updateVjoyHeldUI(st);
-    if (st.vjoyAvailable) {
+    if (st.shiftMode === 'off' || st.method === 'OFF') {
+      vjoyStatus.innerHTML = `<span class="ok">✓</span> 换挡输出已关闭 - 算法只记录提醒`;
+    } else if (st.vjoyAvailable) {
       vjoyStatus.innerHTML = `<span class="ok">✓</span> vJoy 就绪 - 方式 ${st.method}，保持 ${asVjoyHeld.textContent}`;
     } else {
       vjoyStatus.innerHTML = `<span class="err">⚠</span> vJoy 不可用 - 正在使用键盘方式 ${st.method}`;

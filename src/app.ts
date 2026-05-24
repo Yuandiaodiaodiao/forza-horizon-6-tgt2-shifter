@@ -9,7 +9,7 @@
 import { LOG_PATH, logFatalStartupError, setupLogging } from "./logging";
 import { envNumber, envString } from "./env";
 import { openWindowsOverlay } from "./overlay";
-import { applyStartupUpdate, getBuildInfo } from "./updater";
+import { startBackgroundUpdateDownload, getBuildInfo } from "./updater";
 
 setupLogging();
 console.log(`  Log file: ${LOG_PATH}`);
@@ -43,11 +43,11 @@ function createPowerCurveWorker() {
 }
 
 try {
-  if (await applyStartupUpdate()) await new Promise(() => {});
   await import("./key_agent");
   (globalThis as typeof globalThis & { __tgt2PowerCurveWorker?: Worker }).__tgt2PowerCurveWorker =
     createPowerCurveWorker();
   await import("./server");
+  startBackgroundUpdateDownload();
   openDashboard();
   openWindowsOverlay();
 } catch (e) {

@@ -320,7 +320,7 @@ async function processLatestTelemetry() {
 async function updateAppConfig(req: Request, cors: Record<string, string>) {
   const body = await req.json().catch(() => ({})) as any;
   const patch: any = {};
-  if (body.shiftMode === "keyboard" || body.shiftMode === "vjoy") patch.shiftMode = body.shiftMode;
+  if (body.shiftMode === "keyboard" || body.shiftMode === "vjoy" || body.shiftMode === "off") patch.shiftMode = body.shiftMode;
   if (typeof body.vjoyPath === "string") patch.vjoyPath = body.vjoyPath;
   if (body.manualCooldownSec != null) patch.manualCooldownSec = Number(body.manualCooldownSec);
   const config = updateConfig(patch);
@@ -374,10 +374,13 @@ function buildOverlayModel() {
     car: car || overlayCurveCar ? {
       totalSamples: overlayCurveCar ? overlayCurveCar.totalSamples : car!.totalSamples,
       powerBins: overlayCurveCar ? overlayCurveCar.powerBins : car!.powerBins,
+      maxRpm: car?.maxRpm ?? latestTelemetry?.max_rpm ?? 0,
+      idleRpm: car?.idleRpm ?? latestTelemetry?.idle_rpm ?? 0,
       peakHp: overlayCurveCar ? overlayCurveCar.peakHp : car!.peakHp,
       peakHpRpm: overlayCurveCar ? overlayCurveCar.peakHpRpm : car!.peakHpRpm,
       fuelCutRpm: car?.fuelCutRpm ?? null,
       shiftTiming: car?.shiftTiming ?? null,
+      gears: car?.gears ?? {},
       powerCurve: overlayCurveCar ? overlayCurveCar.overlayCurve : [],
     } : null,
   };

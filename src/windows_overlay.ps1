@@ -202,6 +202,7 @@ $pump.Start($WsUrl)
 $lastModel = $null
 $lastFrame = $null
 $lastChartKey = ""
+$lastGearOverlayKey = ""
 $lastMessageAt = [DateTime]::MinValue
 $lastWsError = ""
 $renderPending = $false
@@ -372,6 +373,51 @@ function Draw-Overlay($state) {
     $script:lastChartKey = $chartKey
   }
 
+  $gearRows = @()
+  $gearSkip = @()
+  if ($car -and $car.gears) {
+    foreach ($prop in $car.gears.PSObject.Properties) {
+      $gearNum = 0
+      if ([int]::TryParse([string]$prop.Name, [ref]$gearNum) -and $gearNum -ge 1 -and $gearNum -le 10) {
+        $info = $prop.Value
+        if ($info -and $null -ne $info.upshiftRpm) {
+          $leftRpm = if ($null -ne $info.displayLeftRpm) { [double]$info.displayLeftRpm } elseif ($null -ne $info.entryRpm) { [double]$info.entryRpm } elseif ($gearNum -eq 1) { [double]$minRpm } else { [double]$minRpm }
+          $rightRpm = if ($null -ne $info.displayRightRpm) { [double]$info.displayRightRpm } else { [double]$info.upshiftRpm }
+          if ($rightRpm -gt $leftRpm) {
+            $gearRows += [pscustomobject]@{ gear = $gearNum; left = $leftRpm; right = $rightRpm; rawLeft = $info.entryRpm; rawRight = $info.upshiftRpm }
+          } else {
+            $gearSkip += ("G{0}:{1:n0}>{2:n0}" -f $gearNum, $leftRpm, $rightRpm)
+          }
+        }
+      }
+    }
+  }
+  $gearRows = @($gearRows | Sort-Object gear)
+  if ($gearRows.Count -gt 0) {
+    $rowH = 7.0
+    $rowGap = 3.0
+    $baseY = $padT + $plotH - 5
+    foreach ($row in $gearRows) {
+      $left = [Math]::Max($minRpm, [Math]::Min($maxRpm, [double]$row.left))
+      $right = [Math]::Max($minRpm, [Math]::Min($maxRpm, [double]$row.right))
+      $x1 = & $xOf $left
+      $x2 = & $xOf $right
+      $width = [Math]::Max(3, $x2 - $x1)
+      $y = $baseY - ([double]($row.gear - 1) * ($rowH + $rowGap)) - $rowH
+      if ($y -lt $padT) { continue }
+      $fill = if ($tel -and [int]$tel.gear -eq [int]$row.gear) { [Windows.Media.Color]::FromArgb(125, 63, 185, 80) } else { [Windows.Media.Color]::FromArgb(70, 88, 166, 255) }
+      $stroke = if ($tel -and [int]$tel.gear -eq [int]$row.gear) { $green } else { [Windows.Media.Color]::FromArgb(120, 88, 166, 255) }
+      Add-LiveRectangle $x1 $y $width $rowH $fill $stroke 1
+    }
+  }
+  $gearNames = if ($gearRows.Count -gt 0) { ($gearRows | ForEach-Object { "G$($_.gear)[$([int]$_.left)-$([int]$_.right)]" }) -join "," } else { "none" }
+  $skipText = if ($gearSkip.Count -gt 0) { " skip=" + ($gearSkip -join ",") } else { "" }
+  $gearKey = "{0}:{1}:{2}" -f $state.modelTs, $gearNames, $skipText
+  if ($gearKey -ne $script:lastGearOverlayKey) {
+    Write-OverlayLog ("gearOverlay rows={0} {1}{2}" -f $gearRows.Count, $gearNames, $skipText)
+    $script:lastGearOverlayKey = $gearKey
+  }
+
   if ($tel) {
     $rpm = [double]$tel.rpm
     $curveHp = Lookup-Hp $curve $rpm
@@ -388,6 +434,28 @@ function Draw-Overlay($state) {
     [Windows.Controls.Canvas]::SetLeft($dot, $x - 6)
     [Windows.Controls.Canvas]::SetTop($dot, $y - 6)
     $liveCanvas.Children.Add($dot) | Out-Null
+
+    if ($gearRows.Count -gt 0 -and [int]$tel.gear -ge 1 -and [int]$tel.gear -le 10) {
+      $gearRow = @($gearRows | Where-Object { [int]$_.gear -eq [int]$tel.gear } | Select-Object -First 1)
+      if ($gearRow.Count -gt 0) {
+        $rowH = 7.0
+        $rowGap = 3.0
+        $baseY = $padT + $plotH - 5
+        $dotRpm = [Math]::Max([double]$gearRow[0].left, [Math]::Min([double]$gearRow[0].right, $rpm))
+        $dotX = & $xOf ([Math]::Max($minRpm, [Math]::Min($maxRpm, $dotRpm)))
+        $dotY = $baseY - ([double]([int]$tel.gear - 1) * ($rowH + $rowGap)) - ($rowH / 2)
+        if ($dotY -ge $padT -and $dotY -le ($padT + $plotH)) {
+          $gearDot = New-Object Windows.Shapes.Ellipse
+          $gearDot.Width = 7; $gearDot.Height = 7
+          $gearDot.Fill = [Windows.Media.Brushes]::White
+          $gearDot.Stroke = New-Object Windows.Media.SolidColorBrush ([Windows.Media.Color]::FromArgb(180, 13,17,23))
+          $gearDot.StrokeThickness = 1
+          [Windows.Controls.Canvas]::SetLeft($gearDot, $dotX - 3.5)
+          [Windows.Controls.Canvas]::SetTop($gearDot, $dotY - 3.5)
+          $liveCanvas.Children.Add($gearDot) | Out-Null
+        }
+      }
+    }
 
     Add-LiveText ("{0:n0} HP" -f $curveHp) ([Math]::Min($w - 74, $x + 8)) ([Math]::Max(2, $y - 20)) 11 $red
     $as = if ($state.autoshift.enabled) { "AUTO" } else { "MAN" }
