@@ -110,6 +110,7 @@ interface ShiftDecision {
   targetGear: number;
   reason: string;
   decisionTrace: string;
+  thresholdSource: "learned" | "fallback";
   shiftAdvantage: number;
   breakEvenSec: number;
   effectiveMinAdvantage: number;
@@ -136,6 +137,7 @@ export class AdaptiveAutoShift {
   private lastShiftFromGear = 0;
   private lastShiftToGear = 0;
   private nextCeilingUpshiftAt = 0;
+  private nextFallbackDiscoveryUpshiftAt = 0;
   private enabled = true;
   private shiftLog: string[] = [];
   private decisionLog: string[] = [];
@@ -151,6 +153,8 @@ export class AdaptiveAutoShift {
     shiftCooldownMs: 400,
     /** Fuel-cut/ceiling upshifts need a hard debounce so limiter frames cannot chain-skip gears. */
     ceilingUpshiftCooldownMs: 500,
+    /** Fallback discovery upshifts are intentionally serialized so unknown gears cannot be skipped. */
+    fallbackDiscoveryUpshiftCooldownMs: 1_200,
     slipThreshold: 1.5,
     minSpeedForUpshift: 5,
     rpmBinSize: 10,
@@ -528,6 +532,7 @@ export class AdaptiveAutoShift {
     this.lastShiftFromGear = 0;
     this.lastShiftToGear = 0;
     this.nextCeilingUpshiftAt = 0;
+    this.nextFallbackDiscoveryUpshiftAt = 0;
     this.blockUpshiftUntil = 0;
     this.blockDownshiftUntil = 0;
     this.log(`SWITCH to car ordinal=${ordinal} (${this.currentCar.totalSamples} existing samples)`);
@@ -1082,7 +1087,7 @@ export class AdaptiveAutoShift {
 
   private getFallbackDiscoveryMaxGear(car: CarProfile): number {
     const contiguous = this.getHighestContiguousRatioGear(car);
-    return Math.min(this.config.maxGear, Math.max(1, contiguous) + 1);
+    return Math.min(this.config.maxGear, Math.max(1, contiguous) + 2);
   }
 
   /**
@@ -1649,6 +1654,7 @@ export class AdaptiveAutoShift {
       targetGear,
       reason,
       decisionTrace,
+      thresholdSource: thresholds.source,
       shiftAdvantage: 0,
       breakEvenSec: Infinity,
       effectiveMinAdvantage: this.config.minPowerAdvantageHp,
@@ -1790,7 +1796,13 @@ export class AdaptiveAutoShift {
     const ceilingMaxGear = this.hasLearnedShiftModel(car, gear) && highestLearnedGear > gear
       ? highestLearnedGear
       : canDiscoverNextGear ? this.getFallbackDiscoveryMaxGear(car) : highestLearnedGear;
+    const isFallbackDiscoveryCeiling = gear < ceilingMaxGear && !(this.hasLearnedShiftModel(car, gear) && highestLearnedGear > gear);
     if (rpm >= effectiveCeiling && gear < ceilingMaxGear) {
+      if (isFallbackDiscoveryCeiling && now < this.nextFallbackDiscoveryUpshiftAt) {
+        const waitMs = this.nextFallbackDiscoveryUpshiftAt - now;
+        this.traceDecision(`BLOCK fallback-discovery-cooldown ceiling up ${gear}->${gear + 1} wait=${waitMs.toFixed(0)}ms rpm=${rpm} ceiling=${effectiveCeiling.toFixed(0)} source=${usableCeiling.source}`, true);
+        return { action: null, reason: `fallback discovery cooldown ${waitMs.toFixed(0)}ms` };
+      }
       if (now < this.nextCeilingUpshiftAt) {
         const waitMs = this.nextCeilingUpshiftAt - now;
         this.traceDecision(`BLOCK ceiling-cooldown up ${gear}->${gear + 1} wait=${waitMs.toFixed(0)}ms rpm=${rpm} ceiling=${effectiveCeiling.toFixed(0)} source=${usableCeiling.source}`, true);
@@ -1817,6 +1829,7 @@ export class AdaptiveAutoShift {
       this.lastShiftFromGear = gear;
       this.lastShiftToGear = gear + 1;
       this.nextCeilingUpshiftAt = now + this.config.ceilingUpshiftCooldownMs;
+      this.nextFallbackDiscoveryUpshiftAt = now + this.config.fallbackDiscoveryUpshiftCooldownMs;
       this.recentShiftTimes.push(now);
       car.totalShifts++;
       const r = `CEILING: RPM ${rpm} >= ${effectiveCeiling.toFixed(0)} (${fuelCutTag}) -> forced upshift ${gear}->${gear + 1}`;
@@ -1838,6 +1851,7 @@ export class AdaptiveAutoShift {
       targetGear,
       reason,
       decisionTrace,
+      thresholdSource,
       shiftAdvantage,
       breakEvenSec,
       effectiveMinAdvantage,
@@ -1872,6 +1886,12 @@ export class AdaptiveAutoShift {
 
     if (this.hasManualLock(now)) {
       this.traceDecision(`ALLOW manual-lock same-direction ${wantShift} gear=${gear} held=${this.heldGear} blockUp=${now < this.blockUpshiftUntil} blockDown=${now < this.blockDownshiftUntil} reason=${reason}`, true);
+    }
+
+    if (wantShift === "up" && thresholdSource === "fallback" && now < this.nextFallbackDiscoveryUpshiftAt) {
+      const waitMs = this.nextFallbackDiscoveryUpshiftAt - now;
+      this.traceDecision(`BLOCK fallback-discovery-cooldown up ${gear}->${targetGear} wait=${waitMs.toFixed(0)}ms reason=${reason}`, true);
+      return { action: null, reason: `fallback discovery cooldown ${waitMs.toFixed(0)}ms` };
     }
 
     if (!criticalShift && this.hasRecentUnconfirmedShift(now, this.config.minGearHoldMs)) {
@@ -1951,6 +1971,9 @@ export class AdaptiveAutoShift {
     this.recentShiftTimes.push(now);
     car.totalShifts++;
     this.lastShiftToGear = targetGear;
+    if (wantShift === "up") {
+      this.nextFallbackDiscoveryUpshiftAt = now + this.config.fallbackDiscoveryUpshiftCooldownMs;
+    }
     this.log(`${wantShift === "up" ? "UP" : "DN"}: ${reason}`);
     if (decisionTrace) this.traceDecision(`EXEC ${wantShift} ${gear}->${targetGear} ${decisionTrace} reason=${reason}`, true);
     await this.executeShiftCommand(car, wantShift, gear, targetGear);
@@ -2109,11 +2132,13 @@ export class AdaptiveAutoShift {
       const gears: Record<number, any> = {};
       for (const [g, p] of car.gears) {
         const avgRatio = p.ratioCount > 10 ? p.ratioSum / p.ratioCount : null;
+        const rawRatio = p.ratioCount > 0 ? p.ratioSum / p.ratioCount : null;
         const minSpeed = this.getMinSpeedForGearKmh(car, g, car.maxRpm);
         const downshiftSpeed = this.getDownshiftSpeedForGearKmh(car, g, car.maxRpm);
         gears[g] = {
           samples: p.sampleCount,
           ratio: avgRatio ? +avgRatio.toFixed(3) : null,
+          rawRatio: rawRatio ? +rawRatio.toFixed(6) : null,
           ratioSamples: p.ratioCount,
           minSpeedKmh: minSpeed != null ? +minSpeed.toFixed(1) : null,
           downshiftSpeedKmh: downshiftSpeed != null ? +downshiftSpeed.toFixed(1) : null,

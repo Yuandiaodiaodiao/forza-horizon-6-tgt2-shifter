@@ -1,25 +1,25 @@
 {
     "schema":  "tgt2.autoshift.fixture.v1",
-    "exportedAt":  "2026-05-24T17:07:13.445Z",
+    "exportedAt":  "2026-05-24T17:15:28.055Z",
     "carKey":  3766076382,
     "ordinal":  3766076382,
     "maxRpm":  9000,
     "idleRpm":  800,
-    "peakPower":  677.8,
-    "peakPowerRpm":  8550,
-    "fuelCutRpm":  8486,
+    "peakPower":  677.9,
+    "peakPowerRpm":  8580,
+    "fuelCutRpm":  8707,
     "fuelCutConfidence":  1,
-    "wheelRadius":  0.34719736348146635,
-    "wheelRadiusCount":  4503,
-    "totalSamples":  6244,
-    "totalShifts":  105,
+    "wheelRadius":  0.3471616960943078,
+    "wheelRadiusCount":  9831,
+    "totalSamples":  17289,
+    "totalShifts":  133,
     "highestLearnedGear":  3,
     "learningStatus":  "learning",
     "gears":  {
                   "1":  {
-                            "sampleCount":  177,
-                            "ratioCount":  101,
-                            "ratio":  18.241857,
+                            "sampleCount":  4290,
+                            "ratioCount":  180,
+                            "ratio":  18.969218,
                             "complete":  true,
                             "downshiftRpm":  null,
                             "upshiftRpm":  8280,
@@ -27,80 +27,84 @@
                             "thresholdReason":  "learned thresholds g1 down=- up=8280"
                         },
                   "2":  {
-                            "sampleCount":  317,
-                            "ratioCount":  220,
-                            "ratio":  9.642923,
+                            "sampleCount":  551,
+                            "ratioCount":  343,
+                            "ratio":  9.69234,
                             "complete":  true,
-                            "downshiftRpm":  4017,
+                            "downshiftRpm":  3871,
                             "upshiftRpm":  8280,
                             "thresholdSource":  "learned",
-                            "thresholdReason":  "learned thresholds g2 down=4017 up=8280"
+                            "thresholdReason":  "learned thresholds g2 down=3871 up=8280"
                         },
                   "3":  {
-                            "sampleCount":  615,
-                            "ratioCount":  496,
-                            "ratio":  6.897934,
+                            "sampleCount":  995,
+                            "ratioCount":  686,
+                            "ratio":  6.860901,
                             "complete":  true,
-                            "downshiftRpm":  5563,
+                            "downshiftRpm":  5501,
                             "upshiftRpm":  8280,
                             "thresholdSource":  "fallback",
                             "thresholdReason":  "fallback missing learned next gear g3 highest=3 up=8280"
                         },
                   "4":  {
-                            "sampleCount":  3904,
+                            "sampleCount":  9132,
                             "ratioCount":  1,
-                            "ratio":  4.881192,
+                            "ratio":  4.880746,
                             "complete":  false,
                             "downshiftRpm":  4500,
-                            "upshiftRpm":  8280,
+                            "upshiftRpm":  null,
                             "thresholdSource":  "fallback",
-                            "thresholdReason":  "fallback thresholds g4 down=4500 up=8280"
+                            "thresholdReason":  "fallback thresholds g4 down=4500 up=- max=g4"
                         },
                   "5":  {
-                            "sampleCount":  436,
+                            "sampleCount":  1427,
                             "ratioCount":  1,
-                            "ratio":  4.483895,
+                            "ratio":  4.87078,
                             "complete":  false,
                             "downshiftRpm":  4500,
-                            "upshiftRpm":  8280,
+                            "upshiftRpm":  null,
                             "thresholdSource":  "fallback",
-                            "thresholdReason":  "fallback thresholds g5 down=4500 up=8280"
+                            "thresholdReason":  "fallback thresholds g5 down=4500 up=- max=g4"
                         },
                   "6":  {
-                            "sampleCount":  54,
+                            "sampleCount":  92,
                             "ratioCount":  1,
-                            "ratio":  4.766289,
+                            "ratio":  4.50212,
                             "complete":  false,
                             "downshiftRpm":  4500,
-                            "upshiftRpm":  8280,
+                            "upshiftRpm":  null,
                             "thresholdSource":  "fallback",
-                            "thresholdReason":  "fallback thresholds g6 down=4500 up=8280"
+                            "thresholdReason":  "fallback thresholds g6 down=4500 up=- max=g4"
                         },
                   "7":  {
-                            "sampleCount":  633,
-                            "ratioCount":  603,
-                            "ratio":  3.501065,
-                            "complete":  true,
-                            "downshiftRpm":  4500,
-                            "upshiftRpm":  8280,
-                            "thresholdSource":  "fallback",
-                            "thresholdReason":  "fallback thresholds g7 down=4500 up=8280"
-                        },
-                  "8":  {
-                            "sampleCount":  50,
-                            "ratioCount":  1,
-                            "ratio":  3.447908,
+                            "sampleCount":  650,
+                            "ratioCount":  614,
+                            "ratio":  3.502801,
                             "complete":  false,
                             "downshiftRpm":  4500,
-                            "upshiftRpm":  8280,
+                            "upshiftRpm":  null,
                             "thresholdSource":  "fallback",
-                            "thresholdReason":  "fallback thresholds g8 down=4500 up=8280"
+                            "thresholdReason":  "fallback thresholds g7 down=4500 up=- max=g4"
+                        },
+                  "8":  {
+                            "sampleCount":  74,
+                            "ratioCount":  1,
+                            "ratio":  1.829071,
+                            "complete":  false,
+                            "downshiftRpm":  4500,
+                            "upshiftRpm":  null,
+                            "thresholdSource":  "fallback",
+                            "thresholdReason":  "fallback thresholds g8 down=4500 up=- max=g4"
                         }
               },
     "powerCurve":  [
                        {
+                           "rpm":  870,
+                           "hp":  12.5
+                       },
+                       {
                            "rpm":  1610,
-                           "hp":  119.9
+                           "hp":  117.9
                        },
                        {
                            "rpm":  1630,
@@ -120,7 +124,7 @@
                        },
                        {
                            "rpm":  1690,
-                           "hp":  124.3
+                           "hp":  124.2
                        },
                        {
                            "rpm":  1700,
@@ -144,7 +148,7 @@
                        },
                        {
                            "rpm":  1750,
-                           "hp":  127.3
+                           "hp":  127.2
                        },
                        {
                            "rpm":  1760,
@@ -156,7 +160,7 @@
                        },
                        {
                            "rpm":  1780,
-                           "hp":  128.9
+                           "hp":  128.8
                        },
                        {
                            "rpm":  2170,
@@ -184,99 +188,99 @@
                        },
                        {
                            "rpm":  2920,
-                           "hp":  231.3
+                           "hp":  231.5
                        },
                        {
                            "rpm":  2930,
-                           "hp":  232.2
+                           "hp":  232.4
                        },
                        {
                            "rpm":  2940,
-                           "hp":  232.9
+                           "hp":  233.1
                        },
                        {
                            "rpm":  2950,
-                           "hp":  233.3
+                           "hp":  233.5
                        },
                        {
                            "rpm":  2960,
-                           "hp":  234.1
+                           "hp":  234.4
                        },
                        {
                            "rpm":  2970,
-                           "hp":  234.8
+                           "hp":  234.9
                        },
                        {
                            "rpm":  2980,
-                           "hp":  235.5
+                           "hp":  235.7
                        },
                        {
                            "rpm":  2990,
-                           "hp":  236.3
+                           "hp":  236.5
                        },
                        {
                            "rpm":  3000,
-                           "hp":  236.9
+                           "hp":  237.2
                        },
                        {
                            "rpm":  3010,
-                           "hp":  237.5
+                           "hp":  237.6
                        },
                        {
                            "rpm":  3020,
-                           "hp":  238.3
+                           "hp":  238.6
                        },
                        {
                            "rpm":  3030,
-                           "hp":  239
+                           "hp":  239.3
                        },
                        {
                            "rpm":  3040,
-                           "hp":  239.6
+                           "hp":  239.8
                        },
                        {
                            "rpm":  3050,
-                           "hp":  240.5
+                           "hp":  240.7
                        },
                        {
                            "rpm":  3060,
-                           "hp":  241
+                           "hp":  241.3
                        },
                        {
                            "rpm":  3070,
-                           "hp":  241.9
+                           "hp":  242.1
                        },
                        {
                            "rpm":  3080,
-                           "hp":  242.8
+                           "hp":  243
                        },
                        {
                            "rpm":  3090,
-                           "hp":  243.4
+                           "hp":  243.7
                        },
                        {
                            "rpm":  3100,
-                           "hp":  244.1
+                           "hp":  244.3
                        },
                        {
                            "rpm":  3110,
-                           "hp":  245
+                           "hp":  245.1
                        },
                        {
                            "rpm":  3120,
-                           "hp":  245.8
+                           "hp":  246
                        },
                        {
                            "rpm":  3130,
-                           "hp":  246.5
+                           "hp":  246.6
                        },
                        {
                            "rpm":  3140,
-                           "hp":  247.5
+                           "hp":  247.3
                        },
                        {
                            "rpm":  3150,
-                           "hp":  248.1
+                           "hp":  248.2
                        },
                        {
                            "rpm":  3160,
@@ -292,75 +296,79 @@
                        },
                        {
                            "rpm":  3190,
-                           "hp":  251.6
+                           "hp":  251.5
                        },
                        {
                            "rpm":  3200,
-                           "hp":  252.6
+                           "hp":  252.5
                        },
                        {
                            "rpm":  3210,
-                           "hp":  253.7
+                           "hp":  253.5
                        },
                        {
                            "rpm":  3220,
-                           "hp":  254.4
+                           "hp":  254.2
                        },
                        {
                            "rpm":  3230,
-                           "hp":  255.5
+                           "hp":  255.3
                        },
                        {
                            "rpm":  3240,
-                           "hp":  256.2
+                           "hp":  256
+                       },
+                       {
+                           "rpm":  3250,
+                           "hp":  257.6
                        },
                        {
                            "rpm":  3260,
-                           "hp":  258.2
+                           "hp":  258
                        },
                        {
                            "rpm":  3270,
-                           "hp":  259.5
+                           "hp":  259.2
                        },
                        {
                            "rpm":  3280,
-                           "hp":  260.3
+                           "hp":  260
                        },
                        {
                            "rpm":  3290,
-                           "hp":  261.3
+                           "hp":  261
                        },
                        {
                            "rpm":  3300,
-                           "hp":  262.5
+                           "hp":  262.2
                        },
                        {
                            "rpm":  3310,
-                           "hp":  263.1
+                           "hp":  262.8
                        },
                        {
                            "rpm":  3320,
-                           "hp":  264.3
+                           "hp":  264
                        },
                        {
                            "rpm":  3330,
-                           "hp":  265.2
+                           "hp":  264.9
                        },
                        {
                            "rpm":  3340,
-                           "hp":  266.1
+                           "hp":  265.9
                        },
                        {
                            "rpm":  3350,
-                           "hp":  267.3
+                           "hp":  267
                        },
                        {
                            "rpm":  3360,
-                           "hp":  268
+                           "hp":  267.9
                        },
                        {
                            "rpm":  3370,
-                           "hp":  269.1
+                           "hp":  269
                        },
                        {
                            "rpm":  3390,
@@ -376,59 +384,59 @@
                        },
                        {
                            "rpm":  3420,
-                           "hp":  274.1
+                           "hp":  274.2
                        },
                        {
                            "rpm":  3430,
-                           "hp":  274.7
+                           "hp":  274.8
                        },
                        {
                            "rpm":  3440,
-                           "hp":  276
+                           "hp":  276.1
                        },
                        {
                            "rpm":  3450,
-                           "hp":  276.9
+                           "hp":  277
                        },
                        {
                            "rpm":  3460,
-                           "hp":  277.6
+                           "hp":  277.7
                        },
                        {
                            "rpm":  3470,
-                           "hp":  278.8
+                           "hp":  278.9
                        },
                        {
                            "rpm":  3480,
-                           "hp":  279.7
+                           "hp":  279.8
                        },
                        {
                            "rpm":  3490,
-                           "hp":  280.9
+                           "hp":  281
                        },
                        {
                            "rpm":  3500,
-                           "hp":  281.8
+                           "hp":  281.9
                        },
                        {
                            "rpm":  3510,
-                           "hp":  283
+                           "hp":  283.2
                        },
                        {
                            "rpm":  3520,
-                           "hp":  284.4
+                           "hp":  284.6
                        },
                        {
                            "rpm":  3530,
-                           "hp":  285.6
+                           "hp":  285.2
                        },
                        {
                            "rpm":  3540,
-                           "hp":  286.5
+                           "hp":  286.7
                        },
                        {
                            "rpm":  3560,
-                           "hp":  288.5
+                           "hp":  288.6
                        },
                        {
                            "rpm":  3580,
@@ -440,11 +448,19 @@
                        },
                        {
                            "rpm":  3610,
-                           "hp":  293.3
+                           "hp":  293.4
                        },
                        {
                            "rpm":  3620,
                            "hp":  294.8
+                       },
+                       {
+                           "rpm":  3630,
+                           "hp":  295.6
+                       },
+                       {
+                           "rpm":  3640,
+                           "hp":  296.8
                        },
                        {
                            "rpm":  3660,
@@ -460,11 +476,11 @@
                        },
                        {
                            "rpm":  3710,
-                           "hp":  303.3
+                           "hp":  303.4
                        },
                        {
                            "rpm":  3720,
-                           "hp":  317.7
+                           "hp":  317.8
                        },
                        {
                            "rpm":  3730,
@@ -472,7 +488,7 @@
                        },
                        {
                            "rpm":  3740,
-                           "hp":  305.7
+                           "hp":  305.9
                        },
                        {
                            "rpm":  3750,
@@ -480,431 +496,615 @@
                        },
                        {
                            "rpm":  3760,
-                           "hp":  307.1
+                           "hp":  307.3
                        },
                        {
                            "rpm":  3770,
-                           "hp":  308.5
+                           "hp":  308.6
                        },
                        {
                            "rpm":  3780,
-                           "hp":  311.6
+                           "hp":  311.8
                        },
                        {
                            "rpm":  3820,
-                           "hp":  312.5
+                           "hp":  312.7
+                       },
+                       {
+                           "rpm":  3840,
+                           "hp":  314.3
+                       },
+                       {
+                           "rpm":  3850,
+                           "hp":  315.5
                        },
                        {
                            "rpm":  3860,
-                           "hp":  315.9
+                           "hp":  316.2
                        },
                        {
                            "rpm":  3870,
-                           "hp":  317.5
+                           "hp":  317.9
                        },
                        {
                            "rpm":  3890,
-                           "hp":  318.8
+                           "hp":  319.3
+                       },
+                       {
+                           "rpm":  3900,
+                           "hp":  320
                        },
                        {
                            "rpm":  3910,
-                           "hp":  321.1
+                           "hp":  321.8
                        },
                        {
                            "rpm":  3920,
-                           "hp":  322.1
+                           "hp":  322.7
+                       },
+                       {
+                           "rpm":  3940,
+                           "hp":  325
                        },
                        {
                            "rpm":  3960,
-                           "hp":  326.9
+                           "hp":  327.6
                        },
                        {
                            "rpm":  3980,
-                           "hp":  328.6
+                           "hp":  329.3
                        },
                        {
                            "rpm":  3990,
-                           "hp":  329.9
+                           "hp":  330.6
                        },
                        {
                            "rpm":  4000,
-                           "hp":  331
+                           "hp":  331.6
                        },
                        {
                            "rpm":  4010,
-                           "hp":  332.3
+                           "hp":  333.1
+                       },
+                       {
+                           "rpm":  4020,
+                           "hp":  333.7
                        },
                        {
                            "rpm":  4030,
-                           "hp":  334.2
+                           "hp":  335.2
                        },
                        {
                            "rpm":  4040,
-                           "hp":  335.3
-                       },
-                       {
-                           "rpm":  4060,
                            "hp":  336.4
                        },
                        {
+                           "rpm":  4060,
+                           "hp":  338.6
+                       },
+                       {
                            "rpm":  4070,
-                           "hp":  338.2
+                           "hp":  339.6
                        },
                        {
                            "rpm":  4080,
-                           "hp":  338.8
+                           "hp":  340.4
                        },
                        {
                            "rpm":  4090,
-                           "hp":  339.4
+                           "hp":  340.9
+                       },
+                       {
+                           "rpm":  4100,
+                           "hp":  341.9
                        },
                        {
                            "rpm":  4110,
-                           "hp":  341.2
+                           "hp":  343
+                       },
+                       {
+                           "rpm":  4120,
+                           "hp":  344
                        },
                        {
                            "rpm":  4130,
-                           "hp":  343.2
+                           "hp":  356.3
                        },
                        {
                            "rpm":  4140,
-                           "hp":  355.3
+                           "hp":  357.2
+                       },
+                       {
+                           "rpm":  4160,
+                           "hp":  347.9
                        },
                        {
                            "rpm":  4170,
-                           "hp":  346.7
+                           "hp":  359.5
                        },
                        {
                            "rpm":  4180,
-                           "hp":  358.7
+                           "hp":  360.6
+                       },
+                       {
+                           "rpm":  4200,
+                           "hp":  351.3
                        },
                        {
                            "rpm":  4210,
-                           "hp":  350.9
+                           "hp":  352.6
                        },
                        {
                            "rpm":  4220,
-                           "hp":  352.4
+                           "hp":  354
+                       },
+                       {
+                           "rpm":  4230,
+                           "hp":  354.1
+                       },
+                       {
+                           "rpm":  4240,
+                           "hp":  355.9
                        },
                        {
                            "rpm":  4250,
-                           "hp":  354.6
+                           "hp":  356.4
+                       },
+                       {
+                           "rpm":  4260,
+                           "hp":  357.5
+                       },
+                       {
+                           "rpm":  4270,
+                           "hp":  358.2
+                       },
+                       {
+                           "rpm":  4280,
+                           "hp":  359.6
+                       },
+                       {
+                           "rpm":  4290,
+                           "hp":  360.1
+                       },
+                       {
+                           "rpm":  4300,
+                           "hp":  361
                        },
                        {
                            "rpm":  4310,
-                           "hp":  361.3
+                           "hp":  362
                        },
                        {
-                           "rpm":  4330,
+                           "rpm":  4320,
                            "hp":  363.1
                        },
                        {
+                           "rpm":  4330,
+                           "hp":  363.8
+                       },
+                       {
                            "rpm":  4340,
-                           "hp":  364.4
+                           "hp":  365
+                       },
+                       {
+                           "rpm":  4350,
+                           "hp":  366
+                       },
+                       {
+                           "rpm":  4360,
+                           "hp":  366.5
+                       },
+                       {
+                           "rpm":  4370,
+                           "hp":  367.7
+                       },
+                       {
+                           "rpm":  4380,
+                           "hp":  368.3
                        },
                        {
                            "rpm":  4390,
-                           "hp":  368.8
+                           "hp":  371.8
                        },
                        {
                            "rpm":  4400,
-                           "hp":  370.3
+                           "hp":  370.8
+                       },
+                       {
+                           "rpm":  4410,
+                           "hp":  371.5
                        },
                        {
                            "rpm":  4420,
-                           "hp":  371.4
+                           "hp":  372.3
                        },
                        {
                            "rpm":  4430,
-                           "hp":  374
+                           "hp":  374.1
                        },
                        {
                            "rpm":  4440,
-                           "hp":  373.5
+                           "hp":  374.1
+                       },
+                       {
+                           "rpm":  4450,
+                           "hp":  375.2
+                       },
+                       {
+                           "rpm":  4460,
+                           "hp":  376.6
+                       },
+                       {
+                           "rpm":  4470,
+                           "hp":  377.5
+                       },
+                       {
+                           "rpm":  4480,
+                           "hp":  379
                        },
                        {
                            "rpm":  4490,
-                           "hp":  380.9
+                           "hp":  378.9
                        },
                        {
                            "rpm":  4500,
-                           "hp":  382
+                           "hp":  380.8
+                       },
+                       {
+                           "rpm":  4510,
+                           "hp":  381.4
+                       },
+                       {
+                           "rpm":  4520,
+                           "hp":  382.5
+                       },
+                       {
+                           "rpm":  4530,
+                           "hp":  383.5
+                       },
+                       {
+                           "rpm":  4540,
+                           "hp":  384.2
+                       },
+                       {
+                           "rpm":  4550,
+                           "hp":  385.6
+                       },
+                       {
+                           "rpm":  4560,
+                           "hp":  386.4
+                       },
+                       {
+                           "rpm":  4570,
+                           "hp":  387.5
                        },
                        {
                            "rpm":  4580,
-                           "hp":  390.5
+                           "hp":  389
+                       },
+                       {
+                           "rpm":  4590,
+                           "hp":  397.5
+                       },
+                       {
+                           "rpm":  4600,
+                           "hp":  390.3
+                       },
+                       {
+                           "rpm":  4610,
+                           "hp":  391.5
                        },
                        {
                            "rpm":  4620,
-                           "hp":  393.6
+                           "hp":  392.4
                        },
                        {
                            "rpm":  4630,
-                           "hp":  394.6
+                           "hp":  393.5
                        },
                        {
                            "rpm":  4640,
-                           "hp":  395.2
+                           "hp":  394.5
                        },
                        {
                            "rpm":  4650,
-                           "hp":  396
+                           "hp":  395.3
                        },
                        {
                            "rpm":  4660,
-                           "hp":  397.7
+                           "hp":  396.9
                        },
                        {
                            "rpm":  4670,
-                           "hp":  397.9
+                           "hp":  397.4
                        },
                        {
                            "rpm":  4680,
-                           "hp":  398.9
+                           "hp":  398.5
                        },
                        {
                            "rpm":  4690,
-                           "hp":  399.5
+                           "hp":  399.2
                        },
                        {
                            "rpm":  4700,
-                           "hp":  400.4
+                           "hp":  400.3
                        },
                        {
                            "rpm":  4710,
-                           "hp":  401.2
+                           "hp":  401
                        },
                        {
                            "rpm":  4720,
-                           "hp":  401.9
+                           "hp":  402.4
                        },
                        {
                            "rpm":  4730,
-                           "hp":  403.6
+                           "hp":  403.8
                        },
                        {
                            "rpm":  4740,
-                           "hp":  403.6
+                           "hp":  404
                        },
                        {
                            "rpm":  4750,
-                           "hp":  404.4
+                           "hp":  404.9
                        },
                        {
                            "rpm":  4760,
-                           "hp":  405.3
+                           "hp":  405.8
                        },
                        {
                            "rpm":  4770,
-                           "hp":  406.6
+                           "hp":  407.4
                        },
                        {
                            "rpm":  4780,
-                           "hp":  406.9
+                           "hp":  407.8
                        },
                        {
                            "rpm":  4790,
-                           "hp":  408.1
+                           "hp":  408.8
+                       },
+                       {
+                           "rpm":  4800,
+                           "hp":  409.7
                        },
                        {
                            "rpm":  4810,
-                           "hp":  409.9
+                           "hp":  410.9
                        },
                        {
                            "rpm":  4820,
-                           "hp":  410.8
+                           "hp":  411.8
+                       },
+                       {
+                           "rpm":  4830,
+                           "hp":  412.5
                        },
                        {
                            "rpm":  4840,
-                           "hp":  412.7
+                           "hp":  413.6
+                       },
+                       {
+                           "rpm":  4850,
+                           "hp":  414.7
                        },
                        {
                            "rpm":  4860,
-                           "hp":  414.6
+                           "hp":  415.5
                        },
                        {
                            "rpm":  4870,
-                           "hp":  415.6
+                           "hp":  416.4
                        },
                        {
                            "rpm":  4880,
-                           "hp":  417.3
+                           "hp":  417.5
+                       },
+                       {
+                           "rpm":  4890,
+                           "hp":  418.5
+                       },
+                       {
+                           "rpm":  4900,
+                           "hp":  419.6
                        },
                        {
                            "rpm":  4910,
                            "hp":  420.6
                        },
                        {
+                           "rpm":  4920,
+                           "hp":  421.7
+                       },
+                       {
+                           "rpm":  4930,
+                           "hp":  423.2
+                       },
+                       {
                            "rpm":  4940,
-                           "hp":  424.1
+                           "hp":  423.8
                        },
                        {
                            "rpm":  4950,
-                           "hp":  424.8
+                           "hp":  424.7
+                       },
+                       {
+                           "rpm":  4960,
+                           "hp":  425.7
                        },
                        {
                            "rpm":  4970,
-                           "hp":  427.8
+                           "hp":  427.2
                        },
                        {
                            "rpm":  4980,
-                           "hp":  429.1
+                           "hp":  428.4
                        },
                        {
                            "rpm":  4990,
-                           "hp":  429.8
+                           "hp":  429
                        },
                        {
                            "rpm":  5000,
-                           "hp":  430.5
+                           "hp":  429.4
                        },
                        {
                            "rpm":  5010,
-                           "hp":  432
+                           "hp":  431.2
                        },
                        {
                            "rpm":  5020,
-                           "hp":  432.4
+                           "hp":  432.1
                        },
                        {
                            "rpm":  5030,
-                           "hp":  433.1
+                           "hp":  432.5
+                       },
+                       {
+                           "rpm":  5040,
+                           "hp":  433.3
                        },
                        {
                            "rpm":  5050,
-                           "hp":  435.3
+                           "hp":  434.4
                        },
                        {
                            "rpm":  5060,
-                           "hp":  440.9
+                           "hp":  435.9
                        },
                        {
                            "rpm":  5070,
-                           "hp":  437.4
+                           "hp":  436.7
                        },
                        {
                            "rpm":  5080,
-                           "hp":  438.3
+                           "hp":  437.6
                        },
                        {
                            "rpm":  5090,
-                           "hp":  439
+                           "hp":  438.5
                        },
                        {
                            "rpm":  5100,
-                           "hp":  440.1
+                           "hp":  439.3
                        },
                        {
                            "rpm":  5110,
-                           "hp":  441.4
+                           "hp":  440.9
                        },
                        {
                            "rpm":  5120,
-                           "hp":  442.4
+                           "hp":  441.5
                        },
                        {
                            "rpm":  5130,
-                           "hp":  443.1
+                           "hp":  442.3
                        },
                        {
                            "rpm":  5140,
-                           "hp":  444
+                           "hp":  443.3
                        },
                        {
                            "rpm":  5150,
-                           "hp":  445
+                           "hp":  444.4
                        },
                        {
                            "rpm":  5160,
-                           "hp":  445.8
+                           "hp":  445.3
                        },
                        {
                            "rpm":  5170,
-                           "hp":  446.9
+                           "hp":  446.2
                        },
                        {
                            "rpm":  5180,
-                           "hp":  447.8
+                           "hp":  447.4
                        },
                        {
                            "rpm":  5190,
-                           "hp":  448.9
+                           "hp":  448.5
                        },
                        {
                            "rpm":  5200,
-                           "hp":  449.9
+                           "hp":  449.3
                        },
                        {
                            "rpm":  5210,
                            "hp":  450.8
                        },
                        {
+                           "rpm":  5220,
+                           "hp":  451.5
+                       },
+                       {
                            "rpm":  5230,
-                           "hp":  452.7
+                           "hp":  452.3
                        },
                        {
                            "rpm":  5240,
-                           "hp":  453.8
+                           "hp":  453.2
                        },
                        {
                            "rpm":  5250,
-                           "hp":  454.9
+                           "hp":  454.4
                        },
                        {
                            "rpm":  5260,
-                           "hp":  455.6
+                           "hp":  455.1
                        },
                        {
                            "rpm":  5270,
-                           "hp":  456.7
+                           "hp":  456.4
                        },
                        {
                            "rpm":  5280,
-                           "hp":  457.5
+                           "hp":  457
                        },
                        {
                            "rpm":  5290,
-                           "hp":  458.3
+                           "hp":  461.4
                        },
                        {
                            "rpm":  5300,
-                           "hp":  459.6
+                           "hp":  459.1
                        },
                        {
                            "rpm":  5310,
-                           "hp":  460.5
+                           "hp":  460.1
                        },
                        {
                            "rpm":  5320,
-                           "hp":  461.5
+                           "hp":  461.1
                        },
                        {
                            "rpm":  5330,
-                           "hp":  462.3
+                           "hp":  462
                        },
                        {
                            "rpm":  5340,
-                           "hp":  463.4
+                           "hp":  463.1
                        },
                        {
                            "rpm":  5350,
-                           "hp":  464
+                           "hp":  463.6
                        },
                        {
                            "rpm":  5360,
-                           "hp":  465
+                           "hp":  464.7
                        },
                        {
                            "rpm":  5370,
-                           "hp":  465.9
+                           "hp":  465.7
                        },
                        {
                            "rpm":  5380,
-                           "hp":  467.2
+                           "hp":  467
                        },
                        {
                            "rpm":  5390,
-                           "hp":  467.9
+                           "hp":  467.7
                        },
                        {
                            "rpm":  5400,
@@ -912,7 +1112,7 @@
                        },
                        {
                            "rpm":  5410,
-                           "hp":  470
+                           "hp":  469.9
                        },
                        {
                            "rpm":  5420,
@@ -928,7 +1128,7 @@
                        },
                        {
                            "rpm":  5450,
-                           "hp":  472.9
+                           "hp":  473
                        },
                        {
                            "rpm":  5460,
@@ -936,39 +1136,43 @@
                        },
                        {
                            "rpm":  5470,
-                           "hp":  475
+                           "hp":  475.1
                        },
                        {
                            "rpm":  5480,
-                           "hp":  475.8
+                           "hp":  475.9
                        },
                        {
                            "rpm":  5490,
-                           "hp":  476.8
+                           "hp":  477.1
                        },
                        {
                            "rpm":  5500,
-                           "hp":  477.9
+                           "hp":  478.2
                        },
                        {
                            "rpm":  5510,
-                           "hp":  479.1
+                           "hp":  479.2
+                       },
+                       {
+                           "rpm":  5520,
+                           "hp":  480
                        },
                        {
                            "rpm":  5530,
-                           "hp":  480.6
+                           "hp":  481.3
                        },
                        {
                            "rpm":  5540,
-                           "hp":  482.1
+                           "hp":  482.2
                        },
                        {
                            "rpm":  5550,
-                           "hp":  483.1
+                           "hp":  482.9
                        },
                        {
                            "rpm":  5560,
-                           "hp":  483.9
+                           "hp":  483.7
                        },
                        {
                            "rpm":  5570,
@@ -996,27 +1200,31 @@
                        },
                        {
                            "rpm":  5630,
-                           "hp":  490.7
+                           "hp":  490.6
                        },
                        {
                            "rpm":  5640,
-                           "hp":  491.7
+                           "hp":  491.6
                        },
                        {
                            "rpm":  5650,
-                           "hp":  492.7
+                           "hp":  492.6
                        },
                        {
                            "rpm":  5660,
                            "hp":  493.9
                        },
                        {
+                           "rpm":  5670,
+                           "hp":  494.6
+                       },
+                       {
                            "rpm":  5680,
-                           "hp":  495.7
+                           "hp":  495.6
                        },
                        {
                            "rpm":  5690,
-                           "hp":  496.8
+                           "hp":  496.6
                        },
                        {
                            "rpm":  5700,
@@ -1024,23 +1232,23 @@
                        },
                        {
                            "rpm":  5710,
-                           "hp":  498.6
+                           "hp":  498.5
                        },
                        {
                            "rpm":  5720,
-                           "hp":  500
+                           "hp":  499.4
                        },
                        {
                            "rpm":  5730,
-                           "hp":  500.3
+                           "hp":  500.5
                        },
                        {
                            "rpm":  5740,
-                           "hp":  501.4
+                           "hp":  501.3
                        },
                        {
                            "rpm":  5750,
-                           "hp":  502.3
+                           "hp":  502.2
                        },
                        {
                            "rpm":  5760,
@@ -1060,7 +1268,7 @@
                        },
                        {
                            "rpm":  5800,
-                           "hp":  507.1
+                           "hp":  507.2
                        },
                        {
                            "rpm":  5810,
@@ -1068,15 +1276,15 @@
                        },
                        {
                            "rpm":  5820,
-                           "hp":  508.8
+                           "hp":  509.2
                        },
                        {
                            "rpm":  5830,
-                           "hp":  509.8
+                           "hp":  509.9
                        },
                        {
                            "rpm":  5840,
-                           "hp":  510.9
+                           "hp":  510.8
                        },
                        {
                            "rpm":  5850,
@@ -1084,55 +1292,55 @@
                        },
                        {
                            "rpm":  5860,
-                           "hp":  512.8
+                           "hp":  513
                        },
                        {
                            "rpm":  5870,
-                           "hp":  513.5
+                           "hp":  514
                        },
                        {
                            "rpm":  5880,
-                           "hp":  514.7
+                           "hp":  514.8
                        },
                        {
                            "rpm":  5890,
-                           "hp":  515.5
+                           "hp":  515.7
                        },
                        {
                            "rpm":  5900,
-                           "hp":  516.4
+                           "hp":  516.6
                        },
                        {
                            "rpm":  5910,
-                           "hp":  517.3
+                           "hp":  517.6
                        },
                        {
                            "rpm":  5920,
-                           "hp":  518.2
+                           "hp":  518.4
                        },
                        {
                            "rpm":  5930,
-                           "hp":  519.2
+                           "hp":  519.5
                        },
                        {
                            "rpm":  5940,
-                           "hp":  520.2
+                           "hp":  520.5
                        },
                        {
                            "rpm":  5950,
-                           "hp":  521.1
+                           "hp":  521.3
                        },
                        {
                            "rpm":  5960,
-                           "hp":  522.1
+                           "hp":  522.3
                        },
                        {
                            "rpm":  5970,
-                           "hp":  523.1
+                           "hp":  523.2
                        },
                        {
                            "rpm":  5980,
-                           "hp":  523.6
+                           "hp":  523.8
                        },
                        {
                            "rpm":  5990,
@@ -1144,15 +1352,15 @@
                        },
                        {
                            "rpm":  6010,
-                           "hp":  526.4
+                           "hp":  526.8
                        },
                        {
                            "rpm":  6020,
-                           "hp":  527.7
+                           "hp":  527.8
                        },
                        {
                            "rpm":  6030,
-                           "hp":  528.4
+                           "hp":  528.5
                        },
                        {
                            "rpm":  6040,
@@ -1164,7 +1372,7 @@
                        },
                        {
                            "rpm":  6060,
-                           "hp":  531.1
+                           "hp":  531.2
                        },
                        {
                            "rpm":  6070,
@@ -1176,7 +1384,7 @@
                        },
                        {
                            "rpm":  6090,
-                           "hp":  533.8
+                           "hp":  534
                        },
                        {
                            "rpm":  6100,
@@ -1184,7 +1392,7 @@
                        },
                        {
                            "rpm":  6110,
-                           "hp":  535.7
+                           "hp":  535.6
                        },
                        {
                            "rpm":  6120,
@@ -1196,7 +1404,7 @@
                        },
                        {
                            "rpm":  6140,
-                           "hp":  538.2
+                           "hp":  538.1
                        },
                        {
                            "rpm":  6150,
@@ -1204,11 +1412,11 @@
                        },
                        {
                            "rpm":  6160,
-                           "hp":  539.9
+                           "hp":  540
                        },
                        {
                            "rpm":  6170,
-                           "hp":  540.7
+                           "hp":  540.8
                        },
                        {
                            "rpm":  6180,
@@ -1224,7 +1432,7 @@
                        },
                        {
                            "rpm":  6210,
-                           "hp":  544.4
+                           "hp":  544.2
                        },
                        {
                            "rpm":  6220,
@@ -1236,11 +1444,11 @@
                        },
                        {
                            "rpm":  6240,
-                           "hp":  546.8
+                           "hp":  546.9
                        },
                        {
                            "rpm":  6250,
-                           "hp":  547.6
+                           "hp":  547.8
                        },
                        {
                            "rpm":  6260,
@@ -1248,15 +1456,15 @@
                        },
                        {
                            "rpm":  6270,
-                           "hp":  549.4
+                           "hp":  549.5
                        },
                        {
                            "rpm":  6280,
-                           "hp":  550.3
+                           "hp":  550.4
                        },
                        {
                            "rpm":  6290,
-                           "hp":  551.1
+                           "hp":  551.3
                        },
                        {
                            "rpm":  6300,
@@ -1264,79 +1472,79 @@
                        },
                        {
                            "rpm":  6310,
-                           "hp":  552.8
+                           "hp":  553
                        },
                        {
                            "rpm":  6320,
-                           "hp":  553.7
+                           "hp":  553.9
                        },
                        {
                            "rpm":  6330,
-                           "hp":  554.6
+                           "hp":  554.8
                        },
                        {
                            "rpm":  6340,
-                           "hp":  555.4
+                           "hp":  555.6
                        },
                        {
                            "rpm":  6350,
-                           "hp":  556.2
+                           "hp":  556.6
                        },
                        {
                            "rpm":  6360,
-                           "hp":  557.2
+                           "hp":  557.4
                        },
                        {
                            "rpm":  6370,
-                           "hp":  558
+                           "hp":  558.2
                        },
                        {
                            "rpm":  6380,
-                           "hp":  558.8
+                           "hp":  559
                        },
                        {
                            "rpm":  6390,
-                           "hp":  559.6
+                           "hp":  559.9
                        },
                        {
                            "rpm":  6400,
-                           "hp":  560.6
+                           "hp":  560.9
                        },
                        {
                            "rpm":  6410,
-                           "hp":  561.2
+                           "hp":  561.7
                        },
                        {
                            "rpm":  6420,
-                           "hp":  562.3
+                           "hp":  562.5
                        },
                        {
                            "rpm":  6430,
-                           "hp":  563.1
+                           "hp":  563.3
                        },
                        {
                            "rpm":  6440,
-                           "hp":  564
+                           "hp":  564.2
                        },
                        {
                            "rpm":  6450,
-                           "hp":  564.8
+                           "hp":  565
                        },
                        {
                            "rpm":  6460,
-                           "hp":  565.7
+                           "hp":  565.8
                        },
                        {
                            "rpm":  6470,
-                           "hp":  566.3
+                           "hp":  566.6
                        },
                        {
                            "rpm":  6480,
-                           "hp":  567.2
+                           "hp":  567.5
                        },
                        {
                            "rpm":  6490,
-                           "hp":  568
+                           "hp":  568.3
                        },
                        {
                            "rpm":  6500,
@@ -1344,23 +1552,23 @@
                        },
                        {
                            "rpm":  6510,
-                           "hp":  569.7
+                           "hp":  569.8
                        },
                        {
                            "rpm":  6520,
-                           "hp":  570.5
+                           "hp":  570.7
                        },
                        {
                            "rpm":  6530,
-                           "hp":  571.6
+                           "hp":  571.5
                        },
                        {
                            "rpm":  6540,
-                           "hp":  572.2
+                           "hp":  572.3
                        },
                        {
                            "rpm":  6550,
-                           "hp":  572.9
+                           "hp":  573.1
                        },
                        {
                            "rpm":  6560,
@@ -1372,11 +1580,11 @@
                        },
                        {
                            "rpm":  6580,
-                           "hp":  575.5
+                           "hp":  575.7
                        },
                        {
                            "rpm":  6590,
-                           "hp":  576.7
+                           "hp":  576.3
                        },
                        {
                            "rpm":  6600,
@@ -1384,23 +1592,23 @@
                        },
                        {
                            "rpm":  6610,
-                           "hp":  577.7
+                           "hp":  577.8
                        },
                        {
                            "rpm":  6620,
-                           "hp":  578.7
+                           "hp":  578.8
                        },
                        {
                            "rpm":  6630,
-                           "hp":  579.5
+                           "hp":  579.4
                        },
                        {
                            "rpm":  6640,
-                           "hp":  580.2
+                           "hp":  580.1
                        },
                        {
                            "rpm":  6650,
-                           "hp":  581.1
+                           "hp":  580.9
                        },
                        {
                            "rpm":  6660,
@@ -1408,19 +1616,19 @@
                        },
                        {
                            "rpm":  6670,
-                           "hp":  582.6
+                           "hp":  582.5
                        },
                        {
                            "rpm":  6680,
-                           "hp":  584
+                           "hp":  583.2
                        },
                        {
                            "rpm":  6690,
-                           "hp":  584.2
+                           "hp":  584.1
                        },
                        {
                            "rpm":  6700,
-                           "hp":  584.8
+                           "hp":  584.7
                        },
                        {
                            "rpm":  6710,
@@ -1428,11 +1636,11 @@
                        },
                        {
                            "rpm":  6720,
-                           "hp":  586.2
+                           "hp":  586.3
                        },
                        {
                            "rpm":  6730,
-                           "hp":  587.1
+                           "hp":  587
                        },
                        {
                            "rpm":  6740,
@@ -1440,23 +1648,23 @@
                        },
                        {
                            "rpm":  6750,
-                           "hp":  588.4
+                           "hp":  588.5
                        },
                        {
                            "rpm":  6760,
-                           "hp":  590
+                           "hp":  590.1
                        },
                        {
                            "rpm":  6770,
-                           "hp":  589.9
+                           "hp":  590
                        },
                        {
                            "rpm":  6780,
-                           "hp":  591.8
+                           "hp":  591.9
                        },
                        {
                            "rpm":  6790,
-                           "hp":  591.4
+                           "hp":  591.5
                        },
                        {
                            "rpm":  6800,
@@ -1464,23 +1672,23 @@
                        },
                        {
                            "rpm":  6810,
-                           "hp":  593
-                       },
-                       {
-                           "rpm":  6820,
                            "hp":  593.7
                        },
                        {
+                           "rpm":  6820,
+                           "hp":  593.6
+                       },
+                       {
                            "rpm":  6830,
-                           "hp":  595.4
+                           "hp":  594.5
                        },
                        {
                            "rpm":  6840,
-                           "hp":  594.7
+                           "hp":  595
                        },
                        {
                            "rpm":  6850,
-                           "hp":  596.2
+                           "hp":  595.7
                        },
                        {
                            "rpm":  6860,
@@ -1488,47 +1696,47 @@
                        },
                        {
                            "rpm":  6870,
-                           "hp":  597
+                           "hp":  597.1
                        },
                        {
                            "rpm":  6880,
-                           "hp":  597.7
+                           "hp":  597.8
                        },
                        {
                            "rpm":  6890,
-                           "hp":  598.3
+                           "hp":  598.4
                        },
                        {
                            "rpm":  6900,
-                           "hp":  599
+                           "hp":  599.1
                        },
                        {
                            "rpm":  6910,
-                           "hp":  599.7
+                           "hp":  600
                        },
                        {
                            "rpm":  6920,
-                           "hp":  600.5
+                           "hp":  600.6
                        },
                        {
                            "rpm":  6930,
-                           "hp":  601.1
+                           "hp":  601.3
                        },
                        {
                            "rpm":  6940,
-                           "hp":  601.7
+                           "hp":  601.9
                        },
                        {
                            "rpm":  6950,
-                           "hp":  602.4
+                           "hp":  602.6
                        },
                        {
                            "rpm":  6960,
-                           "hp":  604.7
+                           "hp":  603.2
                        },
                        {
                            "rpm":  6970,
-                           "hp":  603.6
+                           "hp":  603.8
                        },
                        {
                            "rpm":  6980,
@@ -1536,11 +1744,11 @@
                        },
                        {
                            "rpm":  6990,
-                           "hp":  605.2
+                           "hp":  605.1
                        },
                        {
                            "rpm":  7000,
-                           "hp":  605.9
+                           "hp":  605.8
                        },
                        {
                            "rpm":  7010,
@@ -1548,7 +1756,7 @@
                        },
                        {
                            "rpm":  7020,
-                           "hp":  607.2
+                           "hp":  607.1
                        },
                        {
                            "rpm":  7030,
@@ -1556,79 +1764,79 @@
                        },
                        {
                            "rpm":  7040,
-                           "hp":  608.5
+                           "hp":  608.3
                        },
                        {
                            "rpm":  7050,
-                           "hp":  610.9
+                           "hp":  609.1
                        },
                        {
                            "rpm":  7060,
-                           "hp":  609.9
+                           "hp":  609.8
                        },
                        {
                            "rpm":  7070,
-                           "hp":  612.3
+                           "hp":  610.3
                        },
                        {
                            "rpm":  7080,
-                           "hp":  611.2
+                           "hp":  611.1
                        },
                        {
                            "rpm":  7090,
-                           "hp":  611.8
+                           "hp":  611.7
                        },
                        {
                            "rpm":  7100,
-                           "hp":  612.4
+                           "hp":  612.2
                        },
                        {
                            "rpm":  7110,
-                           "hp":  613
+                           "hp":  613.5
                        },
                        {
                            "rpm":  7120,
-                           "hp":  613.7
+                           "hp":  613.9
                        },
                        {
                            "rpm":  7130,
-                           "hp":  614.3
+                           "hp":  614.1
                        },
                        {
                            "rpm":  7140,
-                           "hp":  616.6
+                           "hp":  614.8
                        },
                        {
                            "rpm":  7150,
-                           "hp":  616.3
+                           "hp":  615.3
                        },
                        {
                            "rpm":  7160,
-                           "hp":  616.2
+                           "hp":  616.3
                        },
                        {
                            "rpm":  7170,
-                           "hp":  616.6
+                           "hp":  616.7
                        },
                        {
                            "rpm":  7180,
-                           "hp":  619.4
+                           "hp":  619.2
                        },
                        {
                            "rpm":  7190,
-                           "hp":  618.1
+                           "hp":  618
                        },
                        {
                            "rpm":  7200,
-                           "hp":  618.9
+                           "hp":  618.8
                        },
                        {
                            "rpm":  7210,
-                           "hp":  621.3
+                           "hp":  621.1
                        },
                        {
                            "rpm":  7220,
-                           "hp":  619.8
+                           "hp":  619.6
                        },
                        {
                            "rpm":  7230,
@@ -1636,7 +1844,7 @@
                        },
                        {
                            "rpm":  7240,
-                           "hp":  620.9
+                           "hp":  621.8
                        },
                        {
                            "rpm":  7250,
@@ -1644,15 +1852,15 @@
                        },
                        {
                            "rpm":  7260,
-                           "hp":  622.4
+                           "hp":  622.2
                        },
                        {
                            "rpm":  7270,
-                           "hp":  622.6
+                           "hp":  622.8
                        },
                        {
                            "rpm":  7280,
-                           "hp":  623.2
+                           "hp":  624.2
                        },
                        {
                            "rpm":  7290,
@@ -1660,11 +1868,11 @@
                        },
                        {
                            "rpm":  7300,
-                           "hp":  624.2
+                           "hp":  624.3
                        },
                        {
                            "rpm":  7310,
-                           "hp":  625.6
+                           "hp":  624.9
                        },
                        {
                            "rpm":  7320,
@@ -1676,11 +1884,11 @@
                        },
                        {
                            "rpm":  7340,
-                           "hp":  626.4
+                           "hp":  626.5
                        },
                        {
                            "rpm":  7350,
-                           "hp":  627
+                           "hp":  627.3
                        },
                        {
                            "rpm":  7360,
@@ -1688,7 +1896,7 @@
                        },
                        {
                            "rpm":  7370,
-                           "hp":  628.2
+                           "hp":  628.1
                        },
                        {
                            "rpm":  7380,
@@ -1704,7 +1912,7 @@
                        },
                        {
                            "rpm":  7410,
-                           "hp":  630.4
+                           "hp":  630.3
                        },
                        {
                            "rpm":  7420,
@@ -1716,23 +1924,23 @@
                        },
                        {
                            "rpm":  7440,
-                           "hp":  632.5
+                           "hp":  631.9
                        },
                        {
                            "rpm":  7450,
-                           "hp":  632.3
+                           "hp":  632.6
                        },
                        {
                            "rpm":  7460,
-                           "hp":  632.8
+                           "hp":  633.1
                        },
                        {
                            "rpm":  7470,
-                           "hp":  633.3
+                           "hp":  633.6
                        },
                        {
                            "rpm":  7480,
-                           "hp":  633.7
+                           "hp":  634.3
                        },
                        {
                            "rpm":  7490,
@@ -1740,7 +1948,7 @@
                        },
                        {
                            "rpm":  7500,
-                           "hp":  634.8
+                           "hp":  634.9
                        },
                        {
                            "rpm":  7510,
@@ -1748,59 +1956,59 @@
                        },
                        {
                            "rpm":  7520,
-                           "hp":  635.7
+                           "hp":  636
                        },
                        {
                            "rpm":  7530,
-                           "hp":  636.4
+                           "hp":  636.5
                        },
                        {
                            "rpm":  7540,
-                           "hp":  636.7
-                       },
-                       {
-                           "rpm":  7550,
                            "hp":  637.3
                        },
                        {
+                           "rpm":  7550,
+                           "hp":  637.5
+                       },
+                       {
                            "rpm":  7560,
-                           "hp":  637.9
+                           "hp":  638
                        },
                        {
                            "rpm":  7570,
-                           "hp":  638.4
+                           "hp":  638.5
                        },
                        {
                            "rpm":  7580,
-                           "hp":  639.5
+                           "hp":  641.9
                        },
                        {
                            "rpm":  7590,
-                           "hp":  642.3
+                           "hp":  642.2
                        },
                        {
                            "rpm":  7600,
-                           "hp":  639.7
+                           "hp":  639.9
                        },
                        {
                            "rpm":  7610,
-                           "hp":  640.2
+                           "hp":  640.3
                        },
                        {
                            "rpm":  7620,
-                           "hp":  640.5
+                           "hp":  640.7
                        },
                        {
                            "rpm":  7630,
-                           "hp":  642.3
+                           "hp":  641.4
                        },
                        {
                            "rpm":  7640,
-                           "hp":  641.6
+                           "hp":  641.8
                        },
                        {
                            "rpm":  7650,
-                           "hp":  642.4
+                           "hp":  642.6
                        },
                        {
                            "rpm":  7660,
@@ -1808,119 +2016,119 @@
                        },
                        {
                            "rpm":  7670,
-                           "hp":  643
+                           "hp":  643.2
                        },
                        {
                            "rpm":  7680,
-                           "hp":  643.3
+                           "hp":  643.5
                        },
                        {
                            "rpm":  7690,
-                           "hp":  643.7
+                           "hp":  644.1
                        },
                        {
                            "rpm":  7700,
-                           "hp":  644.2
+                           "hp":  644.6
                        },
                        {
                            "rpm":  7710,
-                           "hp":  644.8
+                           "hp":  646.3
                        },
                        {
                            "rpm":  7720,
-                           "hp":  646.1
+                           "hp":  645.5
                        },
                        {
                            "rpm":  7730,
-                           "hp":  649
+                           "hp":  649.1
                        },
                        {
                            "rpm":  7740,
-                           "hp":  646.1
-                       },
-                       {
-                           "rpm":  7750,
                            "hp":  646.4
                        },
                        {
-                           "rpm":  7760,
-                           "hp":  647
+                           "rpm":  7750,
+                           "hp":  646.7
                        },
                        {
-                           "rpm":  7770,
+                           "rpm":  7760,
                            "hp":  647.3
                        },
                        {
-                           "rpm":  7780,
+                           "rpm":  7770,
                            "hp":  647.8
                        },
                        {
+                           "rpm":  7780,
+                           "hp":  648.1
+                       },
+                       {
                            "rpm":  7790,
-                           "hp":  648.3
+                           "hp":  648.7
                        },
                        {
                            "rpm":  7800,
-                           "hp":  648.6
+                           "hp":  648.8
                        },
                        {
                            "rpm":  7810,
-                           "hp":  649.3
-                       },
-                       {
-                           "rpm":  7820,
-                           "hp":  649.9
-                       },
-                       {
-                           "rpm":  7830,
-                           "hp":  649.9
-                       },
-                       {
-                           "rpm":  7840,
-                           "hp":  650.1
-                       },
-                       {
-                           "rpm":  7850,
                            "hp":  650.8
                        },
                        {
+                           "rpm":  7820,
+                           "hp":  653.1
+                       },
+                       {
+                           "rpm":  7830,
+                           "hp":  650.2
+                       },
+                       {
+                           "rpm":  7840,
+                           "hp":  650.5
+                       },
+                       {
+                           "rpm":  7850,
+                           "hp":  651
+                       },
+                       {
                            "rpm":  7860,
-                           "hp":  652.6
-                       },
-                       {
-                           "rpm":  7870,
-                           "hp":  651.6
-                       },
-                       {
-                           "rpm":  7880,
-                           "hp":  652.1
-                       },
-                       {
-                           "rpm":  7890,
-                           "hp":  652.5
-                       },
-                       {
-                           "rpm":  7900,
                            "hp":  652.7
                        },
                        {
+                           "rpm":  7870,
+                           "hp":  651.9
+                       },
+                       {
+                           "rpm":  7880,
+                           "hp":  652.3
+                       },
+                       {
+                           "rpm":  7890,
+                           "hp":  652.6
+                       },
+                       {
+                           "rpm":  7900,
+                           "hp":  653.1
+                       },
+                       {
                            "rpm":  7910,
-                           "hp":  653.2
+                           "hp":  653.5
                        },
                        {
                            "rpm":  7920,
-                           "hp":  653.8
+                           "hp":  654.4
                        },
                        {
                            "rpm":  7930,
-                           "hp":  657.5
+                           "hp":  657.7
                        },
                        {
                            "rpm":  7940,
-                           "hp":  658
+                           "hp":  658.2
                        },
                        {
                            "rpm":  7950,
-                           "hp":  655.1
+                           "hp":  655.2
                        },
                        {
                            "rpm":  7960,
@@ -1928,35 +2136,35 @@
                        },
                        {
                            "rpm":  7970,
-                           "hp":  657
-                       },
-                       {
-                           "rpm":  7980,
-                           "hp":  656.1
-                       },
-                       {
-                           "rpm":  7990,
-                           "hp":  656.3
-                       },
-                       {
-                           "rpm":  8000,
-                           "hp":  656.8
-                       },
-                       {
-                           "rpm":  8010,
                            "hp":  657.1
                        },
                        {
+                           "rpm":  7980,
+                           "hp":  656.2
+                       },
+                       {
+                           "rpm":  7990,
+                           "hp":  656.5
+                       },
+                       {
+                           "rpm":  8000,
+                           "hp":  657.1
+                       },
+                       {
+                           "rpm":  8010,
+                           "hp":  657.2
+                       },
+                       {
                            "rpm":  8020,
-                           "hp":  657.4
+                           "hp":  661.2
                        },
                        {
                            "rpm":  8030,
-                           "hp":  661.4
+                           "hp":  661.6
                        },
                        {
                            "rpm":  8040,
-                           "hp":  658.2
+                           "hp":  658.3
                        },
                        {
                            "rpm":  8050,
@@ -1976,11 +2184,11 @@
                        },
                        {
                            "rpm":  8090,
-                           "hp":  663.8
+                           "hp":  660.3
                        },
                        {
                            "rpm":  8100,
-                           "hp":  660.3
+                           "hp":  661.9
                        },
                        {
                            "rpm":  8110,
@@ -1992,7 +2200,7 @@
                        },
                        {
                            "rpm":  8130,
-                           "hp":  661.3
+                           "hp":  661.4
                        },
                        {
                            "rpm":  8140,
@@ -2000,23 +2208,23 @@
                        },
                        {
                            "rpm":  8150,
-                           "hp":  662.3
+                           "hp":  662.5
                        },
                        {
                            "rpm":  8160,
-                           "hp":  662.4
+                           "hp":  662.7
                        },
                        {
                            "rpm":  8170,
-                           "hp":  664.3
+                           "hp":  664.2
                        },
                        {
                            "rpm":  8180,
-                           "hp":  662.9
+                           "hp":  663
                        },
                        {
                            "rpm":  8190,
-                           "hp":  663.3
+                           "hp":  663.4
                        },
                        {
                            "rpm":  8200,
@@ -2024,55 +2232,55 @@
                        },
                        {
                            "rpm":  8210,
-                           "hp":  664
+                           "hp":  664.6
                        },
                        {
                            "rpm":  8220,
-                           "hp":  664.4
+                           "hp":  664.5
                        },
                        {
                            "rpm":  8230,
-                           "hp":  666.2
+                           "hp":  666.4
                        },
                        {
                            "rpm":  8240,
-                           "hp":  665
+                           "hp":  665.1
                        },
                        {
                            "rpm":  8250,
-                           "hp":  665.9
-                       },
-                       {
-                           "rpm":  8260,
-                           "hp":  666.3
-                       },
-                       {
-                           "rpm":  8270,
                            "hp":  666
                        },
                        {
+                           "rpm":  8260,
+                           "hp":  666.5
+                       },
+                       {
+                           "rpm":  8270,
+                           "hp":  666.1
+                       },
+                       {
                            "rpm":  8280,
-                           "hp":  666.3
+                           "hp":  668.2
                        },
                        {
                            "rpm":  8290,
-                           "hp":  670.4
+                           "hp":  670.5
                        },
                        {
                            "rpm":  8300,
-                           "hp":  669.9
+                           "hp":  668.4
                        },
                        {
                            "rpm":  8310,
-                           "hp":  667.1
+                           "hp":  667.4
                        },
                        {
                            "rpm":  8320,
-                           "hp":  667.5
+                           "hp":  667.7
                        },
                        {
                            "rpm":  8330,
-                           "hp":  668.6
+                           "hp":  668.8
                        },
                        {
                            "rpm":  8340,
@@ -2080,27 +2288,35 @@
                        },
                        {
                            "rpm":  8350,
-                           "hp":  670.2
+                           "hp":  670.4
                        },
                        {
                            "rpm":  8360,
-                           "hp":  670.8
+                           "hp":  671
                        },
                        {
                            "rpm":  8370,
-                           "hp":  669.2
+                           "hp":  669.5
                        },
                        {
                            "rpm":  8380,
-                           "hp":  673.4
+                           "hp":  673.5
                        },
                        {
                            "rpm":  8390,
-                           "hp":  671.2
+                           "hp":  671.3
+                       },
+                       {
+                           "rpm":  8400,
+                           "hp":  670.4
+                       },
+                       {
+                           "rpm":  8410,
+                           "hp":  670.3
                        },
                        {
                            "rpm":  8420,
-                           "hp":  670.8
+                           "hp":  672.2
                        },
                        {
                            "rpm":  8430,
@@ -2108,7 +2324,7 @@
                        },
                        {
                            "rpm":  8440,
-                           "hp":  673.9
+                           "hp":  674
                        },
                        {
                            "rpm":  8450,
@@ -2116,19 +2332,19 @@
                        },
                        {
                            "rpm":  8460,
-                           "hp":  673.8
+                           "hp":  674
                        },
                        {
                            "rpm":  8470,
-                           "hp":  670.8
+                           "hp":  676
                        },
                        {
                            "rpm":  8480,
-                           "hp":  675.5
+                           "hp":  672.9
                        },
                        {
                            "rpm":  8490,
-                           "hp":  676.9
+                           "hp":  676.8
                        },
                        {
                            "rpm":  8500,
@@ -2136,7 +2352,11 @@
                        },
                        {
                            "rpm":  8510,
-                           "hp":  677.6
+                           "hp":  674
+                       },
+                       {
+                           "rpm":  8520,
+                           "hp":  670.5
                        },
                        {
                            "rpm":  8530,
@@ -2151,96 +2371,104 @@
                            "hp":  677.8
                        },
                        {
+                           "rpm":  8560,
+                           "hp":  674.7
+                       },
+                       {
                            "rpm":  8570,
-                           "hp":  671.8
+                           "hp":  671.9
+                       },
+                       {
+                           "rpm":  8580,
+                           "hp":  677.9
                        },
                        {
                            "rpm":  8590,
-                           "hp":  677.8
+                           "hp":  677.9
                        },
                        {
                            "rpm":  8600,
-                           "hp":  677.3
+                           "hp":  677.5
                        },
                        {
                            "rpm":  8610,
-                           "hp":  672.5
+                           "hp":  672.7
                        },
                        {
                            "rpm":  8620,
-                           "hp":  669.9
+                           "hp":  670
                        },
                        {
                            "rpm":  8630,
-                           "hp":  674.5
+                           "hp":  674.6
                        },
                        {
                            "rpm":  8640,
-                           "hp":  676.3
+                           "hp":  676.5
                        },
                        {
                            "rpm":  8650,
-                           "hp":  671.5
+                           "hp":  677.1
                        },
                        {
                            "rpm":  8660,
-                           "hp":  676.6
+                           "hp":  676.9
                        },
                        {
                            "rpm":  8670,
-                           "hp":  676.3
+                           "hp":  676.6
                        },
                        {
                            "rpm":  8680,
-                           "hp":  676.1
+                           "hp":  676.4
                        },
                        {
                            "rpm":  8690,
-                           "hp":  675.5
+                           "hp":  675.8
                        },
                        {
                            "rpm":  8700,
-                           "hp":  675.6
+                           "hp":  675.9
                        },
                        {
                            "rpm":  8710,
-                           "hp":  675.3
+                           "hp":  675.7
                        },
                        {
                            "rpm":  8720,
-                           "hp":  674.9
+                           "hp":  675.4
                        },
                        {
                            "rpm":  8730,
-                           "hp":  674.8
+                           "hp":  675.1
                        },
                        {
                            "rpm":  8740,
-                           "hp":  674.3
+                           "hp":  674.7
                        },
                        {
                            "rpm":  8750,
-                           "hp":  673.8
+                           "hp":  674.4
                        },
                        {
                            "rpm":  8760,
-                           "hp":  673.6
+                           "hp":  674
                        },
                        {
                            "rpm":  8770,
-                           "hp":  673.2
+                           "hp":  673.7
                        },
                        {
                            "rpm":  8780,
-                           "hp":  666.3
+                           "hp":  672.9
                        },
                        {
                            "rpm":  8790,
-                           "hp":  672.2
+                           "hp":  672.7
                        },
                        {
                            "rpm":  8800,
-                           "hp":  671.9
+                           "hp":  672.4
                        }
                    ]
 }

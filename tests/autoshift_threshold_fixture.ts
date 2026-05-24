@@ -157,8 +157,8 @@ if (gear4 && gear5 && gear6) {
   }
   const g4Fallback = autoShift.getGearShiftThresholds(car, 4, autoShift.getHighestLearnedForwardGear(car), car.maxRpm) as GearThresholds;
   const g5Fallback = autoShift.getGearShiftThresholds(car, 5, autoShift.getHighestLearnedForwardGear(car), car.maxRpm) as GearThresholds;
-  if (g4Fallback.upshiftRpm == null || g5Fallback.upshiftRpm !== null) {
-    console.error(`Fallback discovery should allow G4->G5 only, got G4 up=${g4Fallback.upshiftRpm} G5 up=${g5Fallback.upshiftRpm}`);
+  if (g4Fallback.upshiftRpm == null || g5Fallback.upshiftRpm == null) {
+    console.error(`Fallback discovery should allow two serialized discovery gears, got G4 up=${g4Fallback.upshiftRpm} G5 up=${g5Fallback.upshiftRpm}`);
     process.exit(1);
   }
   if (!autoShift.isPlausibleRatioSample(car, 5, g4Ratio * 0.82)) {

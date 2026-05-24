@@ -33,6 +33,15 @@ header h1{font-size:1.1em;font-weight:600}
 /* Gear */
 .gear{font-size:4.5em;font-weight:800;line-height:1;color:var(--accent);text-align:center}
 .gear-lbl{font-size:.7em;color:var(--dim);text-align:center;margin-top:2px}
+.ratio-table{display:grid;grid-template-columns:repeat(auto-fit,minmax(86px,1fr));gap:6px;margin-top:8px}
+.ratio-cell{background:#21262d;border:1px solid var(--border);border-radius:6px;padding:6px 7px;min-height:52px}
+.ratio-cell.ok{border-color:#1f6f3a;background:#102018}
+.ratio-cell.warn{border-color:#6b5c1f;background:#201b10}
+.ratio-cell.bad{border-color:#5a2424;background:#211313}
+.ratio-head{display:flex;align-items:center;justify-content:space-between;font-size:.68em;color:var(--dim);margin-bottom:3px}
+.ratio-gear{font-weight:700;color:var(--text)}
+.ratio-value{font-size:.9em;font-weight:700;font-variant-numeric:tabular-nums}
+.ratio-meta{font-size:.65em;color:var(--dim);font-variant-numeric:tabular-nums;margin-top:2px}
 
 /* Pedal bars (telemetry) */
 .tpedals{display:flex;gap:8px;margin-top:8px}
@@ -220,6 +229,7 @@ header h1{font-size:1.1em;font-weight:600}
     <div class="sub" style="margin-top:4px">
       <div class="sub-i" id="ratio-info">学习中...</div>
     </div>
+    <div class="ratio-table" id="ratio-table"></div>
   </div>
 
   <!-- G-Force -->
@@ -587,7 +597,60 @@ function updateGearRatios(telemetryGear, speedKmh = currentSpeedForRatio) {
 function setGearRatios(ratios, car = gearRangeCar) {
   knownRatios = ratios;
   gearRangeCar = car;
+  renderGearRatioTable(car);
   drawGearRatios();
+}
+
+function renderGearRatioTable(car = gearRangeCar) {
+  const table = document.getElementById('ratio-table');
+  if (!table) return;
+  const entries = Object.entries(car?.gears || {})
+    .map(([g, info]) => [Number(g), info])
+    .filter(([g]) => g >= 1 && g <= MAX_FORWARD_GEAR)
+    .sort((a, b) => a[0] - b[0]);
+  table.innerHTML = '';
+  if (entries.length < 1) {
+    const empty = document.createElement('div');
+    empty.className = 'sub-i';
+    empty.textContent = '暂无齿比样本';
+    table.appendChild(empty);
+    return;
+  }
+  const completeMap = car?.gearComplete || {};
+  for (const [g, info] of entries) {
+    const ratioSamples = Number(info.ratioSamples || 0);
+    const validRatio = Number(info.ratio);
+    const rawRatio = Number(info.rawRatio);
+    const hasValidRatio = Number.isFinite(validRatio) && validRatio > 0;
+    const hasRawRatio = Number.isFinite(rawRatio) && rawRatio > 0;
+    const complete = Boolean(completeMap[g]);
+    const cell = document.createElement('div');
+    cell.className = `ratio-cell ${complete ? 'ok' : hasRawRatio ? 'warn' : 'bad'}`;
+    const head = document.createElement('div');
+    head.className = 'ratio-head';
+    const label = document.createElement('span');
+    label.className = 'ratio-gear';
+    label.textContent = `G${g}`;
+    const state = document.createElement('span');
+    state.textContent = complete ? '可用' : hasRawRatio ? '采集中' : '无齿比';
+    head.appendChild(label);
+    head.appendChild(state);
+
+    const value = document.createElement('div');
+    value.className = 'ratio-value';
+    value.style.color = complete ? 'var(--green)' : hasRawRatio ? 'var(--yellow)' : 'var(--dim)';
+    value.textContent = hasRawRatio ? rawRatio.toFixed(3) : '--';
+
+    const meta = document.createElement('div');
+    meta.className = 'ratio-meta';
+    const validText = hasValidRatio ? `有效 ${validRatio.toFixed(3)}` : '有效 --';
+    meta.textContent = `${ratioSamples} 样本 | ${validText}`;
+
+    cell.appendChild(head);
+    cell.appendChild(value);
+    cell.appendChild(meta);
+    table.appendChild(cell);
+  }
 }
 
 function drawGearRatios() {
@@ -607,6 +670,7 @@ function drawGearRatios() {
     rCtx.font = `${12*dpr}px sans-serif`;
     rCtx.textAlign = 'center';
     rCtx.fillText('行驶以学习齿比...', W/2, H/2);
+    renderGearRatioTable(gearRangeCar);
     return;
   }
 
@@ -1152,7 +1216,8 @@ function updateAutoShiftUI(status) {
       const complete = gc[g];
       const icon = complete ? '✓' : '…';
       const color = complete ? 'var(--green)' : 'var(--dim)';
-      const ratio = info.ratio ? info.ratio.toFixed(2) : `${info.ratioSamples || 0}r`;
+      const rawRatio = Number(info.rawRatio || info.ratio);
+      const ratio = rawRatio > 0 ? rawRatio.toFixed(2) : `${info.ratioSamples || 0}r`;
       gearStatusParts.push(`<span style="color:${color}">G${g}${icon}(${ratio})</span>`);
     }
     document.getElementById('as-gear-status').innerHTML = gearStatusParts.join(' ');
