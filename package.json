@@ -8,7 +8,8 @@
     "proxy": "bun run src/proxy.ts",
     "dev": "bun run src/proxy.ts",
     "build:win": "bun build ./src/app.ts ./src/power_curve_worker.ts --compile --target=bun-windows-x64 --outfile dist/tgt2-telemetry.exe",
-    "test:autoshift-thresholds": "bun run tests/autoshift_threshold_fixture.ts"
+    "test:autoshift-thresholds": "bun run tests/autoshift_threshold_fixture.ts",
+    "test:autoshift-muscle": "bun run tests/autoshift_muscle_fixture.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"

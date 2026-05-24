@@ -590,6 +590,14 @@ export class AdaptiveAutoShift {
       || (direction === "down" && now < this.blockDownshiftUntil);
   }
 
+  private getManualShiftMode(now = Date.now()): "auto" | "only_up" | "only_down" {
+    const upBlocked = now < this.blockUpshiftUntil;
+    const downBlocked = now < this.blockDownshiftUntil;
+    if (upBlocked && !downBlocked) return "only_down";
+    if (downBlocked && !upBlocked) return "only_up";
+    return "auto";
+  }
+
   // --- Fuel-cut detection ---
   // Track recent high-RPM frames to detect limiter behavior. Some cars do not report zero
   // power at fuel cut, so use plateau/drop signals instead of only power<=0.
@@ -1002,7 +1010,12 @@ export class AdaptiveAutoShift {
 
     const usableCeiling = this.getUsablePowerCeiling(car, maxRpm).rpm;
     const peakRpm = car.peakPowerRpm > 0 ? car.peakPowerRpm : maxRpm * 0.72;
-    const minUpshiftRpm = Math.max(car.idleRpm * 2.2, peakRpm + 450, maxRpm * 0.78);
+    const peakIsHighRpm = peakRpm >= maxRpm * this.config.postPeakCeilingMinPeakRpmFraction;
+    const minUpshiftRpm = Math.max(
+      car.idleRpm * 2.2,
+      peakRpm + 450,
+      peakIsHighRpm ? maxRpm * 0.78 : 0
+    );
     const startRpm = Math.max(minUpshiftRpm, maxRpm * 0.35);
     let best: number | null = null;
 
@@ -1825,6 +1838,10 @@ export class AdaptiveAutoShift {
       : canDiscoverNextGear ? this.getFallbackDiscoveryMaxGear(car) : highestLearnedGear;
     const isFallbackDiscoveryCeiling = gear < ceilingMaxGear && !(this.hasLearnedShiftModel(car, gear) && highestLearnedGear > gear);
     if (rpm >= effectiveCeiling && gear < ceilingMaxGear) {
+      if (this.isBlockedByManualLock("up", now)) {
+        this.traceDecision(`BLOCK manual-lock ceiling up gear=${gear} held=${this.heldGear} blockUp=${now < this.blockUpshiftUntil} reason=rpm ${rpm}>=${effectiveCeiling.toFixed(0)}`, true);
+        return { action: null, reason: "manual-lock blocks upshift" };
+      }
       if (isFallbackDiscoveryCeiling && now < this.nextFallbackDiscoveryUpshiftAt) {
         const waitMs = this.nextFallbackDiscoveryUpshiftAt - now;
         this.traceDecision(`BLOCK fallback-discovery-cooldown ceiling up ${gear}->${gear + 1} wait=${waitMs.toFixed(0)}ms rpm=${rpm} ceiling=${effectiveCeiling.toFixed(0)} source=${usableCeiling.source}`, true);
@@ -2125,6 +2142,7 @@ export class AdaptiveAutoShift {
       fallbackGears,
       blockUpshift: Date.now() < this.blockUpshiftUntil,
       blockDownshift: Date.now() < this.blockDownshiftUntil,
+      manualShiftMode: this.getManualShiftMode(),
       lastShift: this.lastShiftDirection ? {
         direction: this.lastShiftDirection,
         from: this.lastShiftFromGear,
@@ -2215,6 +2233,7 @@ export class AdaptiveAutoShift {
       currentCar: this.currentOrdinal,
       blockUpshift: Date.now() < this.blockUpshiftUntil,
       blockDownshift: Date.now() < this.blockDownshiftUntil,
+      manualShiftMode: this.getManualShiftMode(),
       lastShift: this.lastShiftDirection ? {
         direction: this.lastShiftDirection,
         from: this.lastShiftFromGear,

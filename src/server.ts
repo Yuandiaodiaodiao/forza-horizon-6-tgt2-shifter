@@ -384,6 +384,7 @@ function buildOverlayModel() {
       fallbackGears: status.fallbackGears,
       blockUpshift: status.blockUpshift,
       blockDownshift: status.blockDownshift,
+      manualShiftMode: status.manualShiftMode,
       lastShift: status.lastShift,
     },
     car: car || overlayCurveCar ? {

@@ -403,6 +403,14 @@ function Draw-Overlay($state) {
   $statusText = if ($learningStatus -eq "complete") { "LEARNED" } else { "LEARNING / FALLBACK" }
   $statusColor = if ($learningStatus -eq "complete") { $green } else { $yellow }
   Add-Text $statusText ($padL + 4) ($padT + 4) 12 $statusColor
+  $manualMode = if ($state.autoshift -and $state.autoshift.manualShiftMode) { [string]$state.autoshift.manualShiftMode } else { "auto" }
+  $manualText = switch ($manualMode) {
+    "only_up" { "ONLY UP" }
+    "only_down" { "ONLY DOWN" }
+    default { "AUTO" }
+  }
+  $manualColor = if ($manualMode -eq "auto") { $dim } else { $yellow }
+  Add-Text $manualText ($padL + 4) ($padT + 20) 11 $manualColor
   $gearRows = @($gearRows | Sort-Object gear)
   if ($gearRows.Count -gt 0) {
     $rowH = 7.0
@@ -423,10 +431,10 @@ function Draw-Overlay($state) {
   }
   $gearNames = if ($gearRows.Count -gt 0) { ($gearRows | ForEach-Object { "G$($_.gear)[$([int]$_.left)-$([int]$_.right)]" }) -join "," } else { "none" }
   $skipText = if ($gearSkip.Count -gt 0) { " skip=" + ($gearSkip -join ",") } else { "" }
-  $gearKey = "{0}:{1}:{2}:{3}" -f $state.modelTs, $gearNames, $skipText, $learningStatus
+  $gearKey = "{0}:{1}:{2}:{3}:{4}" -f $state.modelTs, $gearNames, $skipText, $learningStatus, $manualMode
   if ($gearKey -ne $script:lastGearOverlayKey) {
     $fallbackText = if ($fallbackGears.Count -gt 0) { " fallback=G" + (($fallbackGears | Sort-Object) -join ",G") } else { "" }
-    Write-OverlayLog ("gearOverlay status={0} rows={1} {2}{3}{4}" -f $learningStatus, $gearRows.Count, $gearNames, $skipText, $fallbackText)
+    Write-OverlayLog ("gearOverlay status={0} manual={1} rows={2} {3}{4}{5}" -f $learningStatus, $manualMode, $gearRows.Count, $gearNames, $skipText, $fallbackText)
     $script:lastGearOverlayKey = $gearKey
   }
 
