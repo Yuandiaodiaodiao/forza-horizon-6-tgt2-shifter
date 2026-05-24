@@ -390,6 +390,7 @@ header h1{font-size:1.1em;font-weight:600}
           <select id="cfg-shift-mode" style="background:#21262d;color:var(--text);border:1px solid var(--border);border-radius:4px;padding:5px">
             <option value="vjoy">vJoy 直接挡位</option>
             <option value="keyboard">键盘升/降挡</option>
+            <option value="keyboard_clutch">键盘手离（E/Q + Shift）</option>
             <option value="off">关闭输出（只提醒）</option>
           </select>
           <label style="color:var(--dim)">vJoy 路径</label>
@@ -1262,6 +1263,8 @@ async function refreshVjoyStatus() {
     updateVjoyHeldUI(st);
     if (st.shiftMode === 'off' || st.method === 'OFF') {
       vjoyStatus.innerHTML = `<span class="ok">✓</span> 换挡输出已关闭 - 算法只记录提醒`;
+    } else if (st.shiftMode === 'keyboard_clutch' || st.method === 'F') {
+      vjoyStatus.innerHTML = `<span class="ok">✓</span> 键盘手离就绪 - E/Q 换挡，Shift 离合`;
     } else if (st.vjoyAvailable) {
       vjoyStatus.innerHTML = `<span class="ok">✓</span> vJoy 就绪 - 方式 ${st.method}，保持 ${asVjoyHeld.textContent}`;
     } else {

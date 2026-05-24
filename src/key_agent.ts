@@ -47,6 +47,7 @@ const WM_KEYUP = 0x0101;
 const KEYS: Record<string, { vk: number; scan: number }> = {
   E: { vk: 0x45, scan: 0x12 },
   Q: { vk: 0x51, scan: 0x10 },
+  SHIFT: { vk: 0x10, scan: 0x2a },
   W: { vk: 0x57, scan: 0x11 },
   S: { vk: 0x53, scan: 0x1f },
 };
@@ -261,10 +262,16 @@ function postMessageTap(vk: number, scan: number) {
 
 // ── Method selection ──
 
-type Method = "A" | "B" | "C" | "D" | "E";
+type Method = "A" | "B" | "C" | "D" | "E" | "F";
 const initialConfig = loadConfig();
 initVjoy(initialConfig.vjoyPath);
-let method: Method | "OFF" = initialConfig.shiftMode === "off" ? "OFF" : initialConfig.shiftMode === "vjoy" && vjoyAvailable ? "E" : "C";
+function methodFromShiftMode(shiftMode: string): Method | "OFF" {
+  if (shiftMode === "off") return "OFF";
+  if (shiftMode === "keyboard_clutch") return "F";
+  if (shiftMode === "vjoy" && vjoyAvailable) return "E";
+  return "C";
+}
+let method: Method | "OFF" = methodFromShiftMode(initialConfig.shiftMode);
 let currentGear = vjoyHeldBtn === VJOY_BTN_GEAR_BASE ? 1 : 0;
 
 const heldKeys = new Set<string>();
@@ -277,7 +284,7 @@ function keyDown(name: string) {
   if (method === "D") {
     const hwnd = user32Symbols.GetForegroundWindow();
     if (hwnd) user32Symbols.PostMessageW(hwnd, WM_KEYDOWN, k.vk, 1 | (k.scan << 16));
-  } else if (method === "A" || method === "C") {
+  } else if (method === "A" || method === "C" || method === "F") {
     sendInputKey(k.scan, false);
   } else {
     keybdEvent(k.vk, k.scan, false);
@@ -291,7 +298,7 @@ function keyUp(name: string) {
   if (method === "D") {
     const hwnd = user32Symbols.GetForegroundWindow();
     if (hwnd) user32Symbols.PostMessageW(hwnd, WM_KEYUP, k.vk, 1 | (k.scan << 16) | (1 << 30) | (1 << 31));
-  } else if (method === "A" || method === "C") {
+  } else if (method === "A" || method === "C" || method === "F") {
     sendInputKey(k.scan, true);
   } else {
     keybdEvent(k.vk, k.scan, true);
@@ -301,7 +308,7 @@ function keyUp(name: string) {
 async function pressKey(name: string, holdMs: number = 60) {
   const k = KEYS[name];
   if (!k) return;
-  if (method === "C") {
+  if (method === "C" || method === "F") {
     sendInputTap(k.scan);
   } else if (method === "D") {
     postMessageTap(k.vk, k.scan);
@@ -316,15 +323,27 @@ async function pressKey(name: string, holdMs: number = 60) {
   }
 }
 
+async function pressKeyboardShiftWithClutch(key: "E" | "Q") {
+  keyDown(key);
+  await Bun.sleep(10);
+  keyDown("SHIFT");
+  await Bun.sleep(40);
+  keyUp("SHIFT");
+  await Bun.sleep(10);
+  keyUp(key);
+}
+
 // Up/down sequential shift — vJoy direct gear if available, keyboard fallback
-function doShift(direction: "up" | "down") {
+async function doShift(direction: "up" | "down") {
   if (method === "OFF") {
     return;
   } else if (method === "E" && vjoyAvailable) {
     const targetGear = direction === "up" ? currentGear + 1 : currentGear - 1;
     if (vjoySetGear(targetGear)) vjoyPulseClutch();
+  } else if (method === "F") {
+    await pressKeyboardShiftWithClutch(direction === "up" ? "E" : "Q");
   } else {
-    pressKey(direction === "up" ? "E" : "Q");
+    await pressKey(direction === "up" ? "E" : "Q");
   }
 }
 
@@ -338,13 +357,22 @@ function doGear(gear: number) {
 async function sequentialShiftToGear(targetGear: number) {
   if (targetGear < 1 || targetGear > 10) return false;
   if (currentGear < 1 || currentGear > 10) {
-    await pressKey(targetGear > 1 ? "E" : "Q");
+    const key = targetGear > 1 ? "E" : "Q";
+    if (method === "F") {
+      await pressKeyboardShiftWithClutch(key);
+    } else {
+      await pressKey(key);
+    }
     return true;
   }
   const diff = targetGear - currentGear;
   const key = diff > 0 ? "E" : "Q";
   for (let i = 0; i < Math.abs(diff); i++) {
-    await pressKey(key);
+    if (method === "F") {
+      await pressKeyboardShiftWithClutch(key);
+    } else {
+      await pressKey(key);
+    }
     await Bun.sleep(80);
   }
   currentGear = targetGear;
@@ -372,11 +400,17 @@ const server = Bun.serve({
     const RJ = (data: any) =>
       new Response(JSON.stringify(data), { headers: { ...cors, "Content-Type": "application/json" } });
 
-    if (cmd === "UP") { doShift("up"); return R("OK:UP"); }
-    if (cmd === "DOWN") { doShift("down"); return R("OK:DOWN"); }
+    if (cmd === "UP") { await doShift("up"); return R("OK:UP"); }
+    if (cmd === "DOWN") { await doShift("down"); return R("OK:DOWN"); }
 
-    // /clutch — pulse vJoy button 12 for in-game clutch binding
+    // /clutch — pulse clutch for the active output mode.
     if (cmd === "CLUTCH") {
+      if (method === "F") {
+        keyDown("SHIFT");
+        await Bun.sleep(VJOY_CLUTCH_PULSE_MS);
+        keyUp("SHIFT");
+        return R("OK:CLUTCH:SHIFT");
+      }
       vjoyPulseClutch();
       return R(`OK:CLUTCH:${VJOY_BTN_CLUTCH}`);
     }
@@ -449,6 +483,11 @@ const server = Bun.serve({
       updateConfig({ shiftMode: "keyboard" });
       return R("METHOD:KEYBOARD (SendInput atomic)");
     }
+    if (cmd === "METHOD/KEYBOARD_CLUTCH" || cmd === "METHOD/F") {
+      method = "F";
+      updateConfig({ shiftMode: "keyboard_clutch" });
+      return R("METHOD:F (keyboard E/Q + Shift clutch)");
+    }
     if (cmd === "METHOD/OFF") {
       method = "OFF";
       updateConfig({ shiftMode: "off" });
@@ -462,12 +501,12 @@ const server = Bun.serve({
     if (cmd === "CONFIG" && req.method === "POST") {
       const body = await req.json().catch(() => ({})) as any;
       const patch: any = {};
-      if (body.shiftMode === "keyboard" || body.shiftMode === "vjoy" || body.shiftMode === "off") patch.shiftMode = body.shiftMode;
+      if (body.shiftMode === "keyboard" || body.shiftMode === "keyboard_clutch" || body.shiftMode === "vjoy" || body.shiftMode === "off") patch.shiftMode = body.shiftMode;
       if (typeof body.vjoyPath === "string") patch.vjoyPath = body.vjoyPath;
       if (body.manualCooldownSec != null) patch.manualCooldownSec = Number(body.manualCooldownSec);
       const next = updateConfig(patch);
       if (typeof patch.vjoyPath === "string") initVjoy(next.vjoyPath);
-      method = next.shiftMode === "off" ? "OFF" : next.shiftMode === "vjoy" && vjoyAvailable ? "E" : "C";
+      method = methodFromShiftMode(next.shiftMode);
       return RJ({ ...next, method, vjoyAvailable, vjoyDllPath });
     }
 
@@ -486,7 +525,7 @@ const server = Bun.serve({
     }
 
     return R(
-      "Commands: /up /down /gear/N /gear/hold/N /gear/release /clutch /throttle/on|off /brake/on|off /press/KEY/MS /release /status /config /method/A|B|C|D|E|KEYBOARD|OFF",
+      "Commands: /up /down /gear/N /gear/hold/N /gear/release /clutch /throttle/on|off /brake/on|off /press/KEY/MS /release /status /config /method/A|B|C|D|E|F|KEYBOARD|KEYBOARD_CLUTCH|OFF",
       { status: 400 },
     );
   },
@@ -495,8 +534,8 @@ const server = Bun.serve({
 console.log("=".repeat(55));
 console.log("  Key Agent v5 — interactive session");
 console.log(`  http://${HOST}:${PORT}`);
-console.log(`  Method: ${method}${method === "E" ? " (vJoy direct gear)" : ""}`);
-console.log("  E=vJoy  C=atomic  D=PostMessage  A/B=legacy");
+console.log(`  Method: ${method}${method === "E" ? " (vJoy direct gear)" : method === "F" ? " (keyboard E/Q + Shift clutch)" : ""}`);
+console.log("  E=vJoy  F=keyboard clutch  C=atomic  D=PostMessage  A/B=legacy");
 if (vjoyAvailable) {
   console.log(`  vJoy device ${VJOY_DEVICE_ID} ready ✓`);
   console.log("  Button mapping:");

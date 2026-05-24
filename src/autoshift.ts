@@ -223,6 +223,12 @@ export class AdaptiveAutoShift {
     clutchReleasedThreshold: 5,
     /** Need this many clean samples before using speed-derived gear caps. */
     minWheelRadiusSamples: 20,
+    /** Ratio learning must avoid clutch/fuel-cut/free-rev windows. */
+    minThrottleForRatioLearning: 0.18,
+    minPowerRatioForRatioLearning: 0.06,
+    maxRatioLearningRpmFraction: 0.94,
+    maxRatioLearningFuelCutFraction: 0.97,
+    ratioMonotonicTolerance: 0.02,
     /** Small tolerance so telemetry quantization does not block exactly-at-threshold shifts. */
     gearMinSpeedToleranceKmh: 2.0,
     /** Reset to first gear once the car is effectively stopped. */
@@ -610,12 +616,10 @@ export class AdaptiveAutoShift {
     const hardZero = powerNow <= 5 && recent.some(s => s.power > 50);
 
     if (nearTop && (hardZero || (plateau && powerDrop) || postPeakPlateau)) {
-      const cutRpm = Math.round(minRecentRpm);
-      const minCredibleCutRpm = car.peakPowerRpm > 0
-        ? car.peakPowerRpm + this.config.postPeakCeilingRpmMargin * 0.65
-        : car.maxRpm * this.config.fuelCutDetectRpmFraction;
+      const cutRpm = Math.round(maxRecentRpm);
+      const minCredibleCutRpm = this.getMinCredibleFuelCutRpm(car);
       if (cutRpm < minCredibleCutRpm) {
-        this.traceDecision(`IGNORE fuel-cut candidate rpm=${cutRpm} min=${minCredibleCutRpm.toFixed(0)} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)}`, true);
+        this.traceDecision(`IGNORE fuel-cut candidate rpm=${cutRpm} min=${minCredibleCutRpm.toFixed(0)} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} peakRpm=${car.peakPowerRpm} throttle=${throttleNow.toFixed(2)}`, true);
         this.fuelCutSamples = [];
         return;
       }
@@ -627,6 +631,13 @@ export class AdaptiveAutoShift {
       this.updateFuelCut(car, cutRpm, source);
       this.fuelCutSamples = [];
     }
+  }
+
+  private getMinCredibleFuelCutRpm(car: CarProfile): number {
+    const highRpmFloor = car.maxRpm * this.config.fuelCutDetectRpmFraction;
+    if (car.peakPowerRpm <= 0) return highRpmFloor;
+    const peakFloor = car.peakPowerRpm - this.config.postPeakCeilingRpmMargin * 0.6;
+    return Math.max(highRpmFloor, peakFloor);
   }
 
   private updateFuelCut(car: CarProfile, cutRpm: number, source: string) {
@@ -675,11 +686,14 @@ export class AdaptiveAutoShift {
       } else {
         drivenAvg = wheel_speed.reduce((s, w) => s + Math.abs(w), 0) / 4;
       }
-      const maxSlip = Math.max(...(frame.tire_slip || [0]));
-      if (drivenAvg > 5 && maxSlip < 2) {
+      if (this.isReliableRatioSample(car, frame, drivenAvg, powerHp, throttle, maxSlip, isGrounded, cleanSurface)) {
         const engineRadS = rpm * Math.PI * 2 / 60;
         const ratio = engineRadS / drivenAvg;
-        if (ratio > 0.5 && ratio < 50) {
+        if (this.isPlausibleRatioSample(car, gear, ratio)) {
+          if (!this.isRawGearRatioMonotonicValid(car, gear)) {
+            p.ratioSum = 0;
+            p.ratioCount = 0;
+          }
           p.ratioSum += ratio;
           p.ratioCount++;
           this.dirty = true;
@@ -735,10 +749,87 @@ export class AdaptiveAutoShift {
   }
 
   /** Get learned gear ratio. Returns null if insufficient data. */
-  private getGearRatio(car: CarProfile, gear: number): number | null {
+  private getRawGearRatio(car: CarProfile, gear: number): number | null {
     const p = car.gears.get(gear);
     if (!p || p.ratioCount < 10) return null;
     return p.ratioSum / p.ratioCount;
+  }
+
+  private getGearRatio(car: CarProfile, gear: number): number | null {
+    const ratio = this.getRawGearRatio(car, gear);
+    if (ratio == null) return null;
+    return gear <= this.getHighestContiguousRatioGear(car) ? ratio : null;
+  }
+
+  private isRawGearRatioMonotonicValid(car: CarProfile, gear: number): boolean {
+    const ratio = this.getRawGearRatio(car, gear);
+    if (ratio == null) return false;
+    const tol = this.config.ratioMonotonicTolerance;
+    const lower = this.findNearestRawGearRatio(car, gear, -1);
+    if (lower != null && ratio >= lower * (1 - tol)) return false;
+    const higher = this.findNearestRawGearRatio(car, gear, 1);
+    if (higher != null && ratio <= higher * (1 + tol)) return false;
+    return true;
+  }
+
+  private findNearestRawGearRatio(car: CarProfile, gear: number, direction: -1 | 1): number | null {
+    for (let g = gear + direction; g >= 1 && g <= this.config.maxGear; g += direction) {
+      const ratio = this.getRawGearRatio(car, g);
+      if (ratio != null) return ratio;
+    }
+    return null;
+  }
+
+  private getHighestContiguousRatioGear(car: CarProfile): number {
+    let highest = 0;
+    let previousRatio: number | null = null;
+    const tol = this.config.ratioMonotonicTolerance;
+    for (let gear = 1; gear <= this.config.maxGear; gear++) {
+      const ratio = this.getRawGearRatio(car, gear);
+      if (ratio == null) break;
+      if (previousRatio != null && ratio >= previousRatio * (1 - tol)) break;
+      highest = gear;
+      previousRatio = ratio;
+    }
+    return highest;
+  }
+
+  private isPlausibleRatioSample(car: CarProfile, gear: number, ratio: number): boolean {
+    if (ratio <= 0.5 || ratio >= 50) return false;
+    const tol = this.config.ratioMonotonicTolerance;
+    const lower = this.findNearestValidRawGearRatio(car, gear, -1);
+    if (lower != null && ratio >= lower * (1 - tol)) return false;
+    const higher = this.findNearestValidRawGearRatio(car, gear, 1);
+    if (higher != null && ratio <= higher * (1 + tol)) return false;
+    return true;
+  }
+
+  private findNearestValidRawGearRatio(car: CarProfile, gear: number, direction: -1 | 1): number | null {
+    for (let g = gear + direction; g >= 1 && g <= this.config.maxGear; g += direction) {
+      const ratio = this.getRawGearRatio(car, g);
+      if (ratio != null && g <= this.getHighestContiguousRatioGear(car)) return ratio;
+    }
+    return null;
+  }
+
+  private isReliableRatioSample(
+    car: CarProfile,
+    frame: TelemetryFrame,
+    drivenAvg: number,
+    powerHp: number,
+    throttle: number,
+    maxSlip: number,
+    isGrounded: boolean,
+    cleanSurface: boolean
+  ): boolean {
+    if (drivenAvg <= 5 || frame.rpm <= 1000) return false;
+    if (frame.clutch > this.config.clutchReleasedThreshold) return false;
+    if (maxSlip >= 1.0 || !isGrounded || !cleanSurface) return false;
+    if (throttle < this.config.minThrottleForRatioLearning) return false;
+    if (car.peakPower > 50 && powerHp < car.peakPower * this.config.minPowerRatioForRatioLearning) return false;
+    if (frame.rpm > car.maxRpm * this.config.maxRatioLearningRpmFraction) return false;
+    if (car.fuelCutRpm > 0 && frame.rpm > car.fuelCutRpm * this.config.maxRatioLearningFuelCutFraction) return false;
+    return true;
   }
 
   /** Convert wheel speed (rad/s) to RPM given a gear ratio */
@@ -983,10 +1074,15 @@ export class AdaptiveAutoShift {
 
     return {
       downshiftRpm: gear > 1 ? fallbackDown : null,
-      upshiftRpm: gear < this.config.maxGear ? fallbackUp : null,
+      upshiftRpm: gear < this.getFallbackDiscoveryMaxGear(car) ? fallbackUp : null,
       source: "fallback",
-      reason: `fallback thresholds g${gear} down=${gear > 1 ? fallbackDown.toFixed(0) : "-"} up=${gear < this.config.maxGear ? fallbackUp.toFixed(0) : "-"}`,
+      reason: `fallback thresholds g${gear} down=${gear > 1 ? fallbackDown.toFixed(0) : "-"} up=${gear < this.getFallbackDiscoveryMaxGear(car) ? fallbackUp.toFixed(0) : "-"} max=g${this.getFallbackDiscoveryMaxGear(car)}`,
     };
+  }
+
+  private getFallbackDiscoveryMaxGear(car: CarProfile): number {
+    const contiguous = this.getHighestContiguousRatioGear(car);
+    return Math.min(this.config.maxGear, Math.max(1, contiguous) + 1);
   }
 
   /**
@@ -1272,7 +1368,7 @@ export class AdaptiveAutoShift {
   private isGearDataComplete(car: CarProfile, gear: number): boolean {
     const p = car.gears.get(gear);
     if (!p) return false;
-    const hasRatio = p.ratioCount >= 10;
+    const hasRatio = this.getGearRatio(car, gear) !== null;
     const curveSamples = this.getCurveLookup(car).totalSamples;
     const hasCurve = car.powerByRpm.size >= 8 && curveSamples >= this.config.minSamplesForLookup;
     return hasRatio && hasCurve;
@@ -1281,7 +1377,7 @@ export class AdaptiveAutoShift {
   private getHighestLearnedForwardGear(car: CarProfile): number {
     let highest = 1;
     for (const [gear, profile] of car.gears) {
-      if (gear >= 1 && gear <= this.config.maxGear && profile.ratioCount >= 10) {
+      if (gear >= 1 && gear <= this.config.maxGear && profile.ratioCount >= 10 && this.getGearRatio(car, gear) !== null) {
         highest = Math.max(highest, gear);
       }
     }
@@ -1535,7 +1631,7 @@ export class AdaptiveAutoShift {
     let criticalShift = false;
     const decisionTrace = `mode=threshold source=${thresholds.source} gear=${gear} rpm=${rpm.toFixed(0)} down=${thresholds.downshiftRpm?.toFixed(0) ?? "-"} up=${thresholds.upshiftRpm?.toFixed(0) ?? "-"}`;
 
-    const maxUpshiftGear = thresholds.source === "fallback" ? this.config.maxGear : highestLearnedGear;
+    const maxUpshiftGear = thresholds.source === "fallback" ? this.getFallbackDiscoveryMaxGear(car) : highestLearnedGear;
     if (thresholds.upshiftRpm !== null && rpm >= thresholds.upshiftRpm && gear < maxUpshiftGear) {
       wantShift = "up";
       targetGear = gear + 1;
@@ -1693,7 +1789,7 @@ export class AdaptiveAutoShift {
     const canDiscoverNextGear = gear < Math.min(this.config.maxGear, 6);
     const ceilingMaxGear = this.hasLearnedShiftModel(car, gear) && highestLearnedGear > gear
       ? highestLearnedGear
-      : canDiscoverNextGear ? this.config.maxGear : highestLearnedGear;
+      : canDiscoverNextGear ? this.getFallbackDiscoveryMaxGear(car) : highestLearnedGear;
     if (rpm >= effectiveCeiling && gear < ceilingMaxGear) {
       if (now < this.nextCeilingUpshiftAt) {
         const waitMs = this.nextCeilingUpshiftAt - now;

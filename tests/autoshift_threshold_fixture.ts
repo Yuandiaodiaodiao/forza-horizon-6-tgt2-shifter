@@ -114,6 +114,11 @@ if (gear2) {
     console.error(`High-RPM unlearned G1 should fallback at 0.92 redline, got ${highRpmFallback.upshiftRpm}`);
     process.exit(1);
   }
+  const minCredibleFuelCutRpm = autoShift.getMinCredibleFuelCutRpm(car);
+  if (minCredibleFuelCutRpm > 10100) {
+    console.error(`High-RPM peak should not require fuel-cut above 10100rpm, got min=${minCredibleFuelCutRpm}`);
+    process.exit(1);
+  }
   car.maxRpm = originalMaxRpm;
   car.peakPower = originalPeakPower;
   car.peakPowerRpm = originalPeakPowerRpm;
@@ -121,6 +126,54 @@ if (gear2) {
   car.fuelCutConfidence = originalFuelCutConfidence;
   gear2.ratioCount = originalRatioCount;
   gear2.ratioSum = originalRatioSum;
+}
+
+const gear4 = car.gears.get(4);
+const gear5 = car.gears.get(5);
+const gear6 = car.gears.get(6);
+const gear7 = car.gears.get(7);
+if (gear4 && gear5 && gear6) {
+  const originalG5 = { ratioSum: gear5.ratioSum, ratioCount: gear5.ratioCount };
+  const originalG6 = { ratioSum: gear6.ratioSum, ratioCount: gear6.ratioCount };
+  const originalG7 = gear7 ? { ratioSum: gear7.ratioSum, ratioCount: gear7.ratioCount } : null;
+  const g4Ratio = gear4.ratioSum / gear4.ratioCount;
+  gear5.ratioCount = 20;
+  gear5.ratioSum = g4Ratio * 1.12 * gear5.ratioCount;
+  gear6.ratioCount = 20;
+  gear6.ratioSum = g4Ratio * 1.35 * gear6.ratioCount;
+  if (gear7) {
+    gear7.ratioCount = 20;
+    gear7.ratioSum = g4Ratio * 0.45 * gear7.ratioCount;
+  }
+
+  if (autoShift.getGearRatio(car, 5) !== null || autoShift.getGearRatio(car, 6) !== null || (gear7 && autoShift.getGearRatio(car, 7) !== null)) {
+    console.error("Non-contiguous or non-monotonic learned gear ratios should be rejected");
+    process.exit(1);
+  }
+  const highestContiguous = autoShift.getHighestContiguousRatioGear(car);
+  if (highestContiguous !== 4) {
+    console.error(`Expected contiguous ratio prefix through G4 after G5 pollution, got G${highestContiguous}`);
+    process.exit(1);
+  }
+  const g4Fallback = autoShift.getGearShiftThresholds(car, 4, autoShift.getHighestLearnedForwardGear(car), car.maxRpm) as GearThresholds;
+  const g5Fallback = autoShift.getGearShiftThresholds(car, 5, autoShift.getHighestLearnedForwardGear(car), car.maxRpm) as GearThresholds;
+  if (g4Fallback.upshiftRpm == null || g5Fallback.upshiftRpm !== null) {
+    console.error(`Fallback discovery should allow G4->G5 only, got G4 up=${g4Fallback.upshiftRpm} G5 up=${g5Fallback.upshiftRpm}`);
+    process.exit(1);
+  }
+  if (!autoShift.isPlausibleRatioSample(car, 5, g4Ratio * 0.82)) {
+    console.error("Plausible new G5 ratio should not be blocked by polluted higher gears");
+    process.exit(1);
+  }
+
+  gear5.ratioSum = originalG5.ratioSum;
+  gear5.ratioCount = originalG5.ratioCount;
+  gear6.ratioSum = originalG6.ratioSum;
+  gear6.ratioCount = originalG6.ratioCount;
+  if (gear7 && originalG7) {
+    gear7.ratioSum = originalG7.ratioSum;
+    gear7.ratioCount = originalG7.ratioCount;
+  }
 }
 
 rmSync(runtimeAppData, { recursive: true, force: true });

@@ -333,7 +333,7 @@ async function processLatestTelemetry() {
 async function updateAppConfig(req: Request, cors: Record<string, string>) {
   const body = await req.json().catch(() => ({})) as any;
   const patch: any = {};
-  if (body.shiftMode === "keyboard" || body.shiftMode === "vjoy" || body.shiftMode === "off") patch.shiftMode = body.shiftMode;
+  if (body.shiftMode === "keyboard" || body.shiftMode === "keyboard_clutch" || body.shiftMode === "vjoy" || body.shiftMode === "off") patch.shiftMode = body.shiftMode;
   if (typeof body.vjoyPath === "string") patch.vjoyPath = body.vjoyPath;
   if (body.manualCooldownSec != null) patch.manualCooldownSec = Number(body.manualCooldownSec);
   const config = updateConfig(patch);

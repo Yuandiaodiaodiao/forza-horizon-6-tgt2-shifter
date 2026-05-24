@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-export type ShiftMode = "keyboard" | "vjoy" | "off";
+export type ShiftMode = "keyboard" | "keyboard_clutch" | "vjoy" | "off";
 
 export interface AppConfig {
   shiftMode: ShiftMode;
@@ -44,7 +44,7 @@ function parseIni(text: string): Record<string, Record<string, string>> {
 function serializeIni(config: AppConfig): string {
   return [
     "; T-GT II + Forza Telemetry settings",
-    "; shift_mode = keyboard, vjoy, or off",
+    "; shift_mode = keyboard, keyboard_clutch, vjoy, or off",
     "[shift]",
     `shift_mode=${config.shiftMode}`,
     `manual_cooldown_sec=${config.manualCooldownSec}`,
@@ -69,7 +69,7 @@ export function loadConfig(): AppConfig {
   const shift = ini.shift ?? {};
   const vjoy = ini.vjoy ?? {};
   const admin = ini.admin ?? {};
-  const mode = shift.shift_mode === "keyboard" || shift.shift_mode === "vjoy" || shift.shift_mode === "off"
+  const mode = shift.shift_mode === "keyboard" || shift.shift_mode === "keyboard_clutch" || shift.shift_mode === "vjoy" || shift.shift_mode === "off"
     ? shift.shift_mode
     : DEFAULT_CONFIG.shiftMode;
   const cooldown = Number(shift.manual_cooldown_sec);
@@ -88,7 +88,7 @@ export function saveConfig(config: AppConfig) {
 
 export function updateConfig(patch: Partial<AppConfig>): AppConfig {
   const next = { ...loadConfig(), ...patch };
-  if (next.shiftMode !== "keyboard" && next.shiftMode !== "vjoy" && next.shiftMode !== "off") next.shiftMode = DEFAULT_CONFIG.shiftMode;
+  if (next.shiftMode !== "keyboard" && next.shiftMode !== "keyboard_clutch" && next.shiftMode !== "vjoy" && next.shiftMode !== "off") next.shiftMode = DEFAULT_CONFIG.shiftMode;
   next.manualCooldownSec = Math.max(0, Math.min(120, Number(next.manualCooldownSec) || 0));
   saveConfig(next);
   return next;
