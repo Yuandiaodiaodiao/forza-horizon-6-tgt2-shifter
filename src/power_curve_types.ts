@@ -11,9 +11,9 @@ export interface PowerCurveCarSnapshot {
   peakHp: number;
   peakHpRpm: number;
   updatedAt: number;
-  /** Consumer curve after 1 -> 3 -> 10 RPM median aggregation. */
+  /** Consumer curve after 1 -> 3 -> 10 RPM upper-quantile aggregation and smoothing. */
   powerCurve: PowerCurvePoint[];
-  /** Rendering curve after an additional 100 RPM median aggregation. */
+  /** Rendering curve after an additional 100 RPM upper-quantile aggregation and smoothing. */
   overlayCurve: PowerCurvePoint[];
 }
 

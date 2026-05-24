@@ -108,15 +108,27 @@ header h1{font-size:1.1em;font-weight:600}
 .gear-panel{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .gear-btn{width:56px;height:48px;border:2px solid var(--border);border-radius:8px;background:#21262d;color:var(--text);font-size:1.1em;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:all .15s;user-select:none}
 .gear-btn:hover{border-color:var(--accent);background:#1a2233}
-.gear-btn:active,.gear-btn.active{border-color:var(--green);background:#0d2818;color:var(--green);box-shadow:0 0 12px rgba(63,185,80,.3)}
-.gear-btn.clutch-btn:active{border-color:var(--yellow);background:#2a2108;color:var(--yellow);box-shadow:0 0 12px rgba(210,153,34,.3)}
+.gear-btn:not(.clutch-btn):active,.gear-btn.active{border-color:var(--green);background:#0d2818;color:var(--green);box-shadow:0 0 12px rgba(63,185,80,.3)}
 .gear-btn .g-label{font-size:.5em;font-weight:400;color:var(--dim);margin-top:1px}
 .gear-btn.active .g-label{color:var(--green)}
 .vjoy-status{font-size:.75em;color:var(--dim);margin-top:8px}
 .vjoy-status .ok{color:var(--green)}.vjoy-status .err{color:var(--red)}
 
+/* Beginner guide */
+.guide-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.guide-box{background:#21262d;border:1px solid var(--border);border-radius:6px;padding:10px}
+.guide-box h3{font-size:.85em;font-weight:600;margin-bottom:8px;color:var(--text)}
+.guide-list{display:flex;flex-direction:column;gap:6px;font-size:.78em;line-height:1.45;color:var(--dim)}
+.guide-list li{margin-left:16px}
+.guide-list strong,.guide-port strong{color:var(--text);font-weight:600}
+.guide-check{display:grid;grid-template-columns:1fr;gap:6px;font-size:.78em;color:var(--dim)}
+.guide-check label{display:flex;gap:7px;align-items:flex-start;line-height:1.35}
+.guide-check input{accent-color:var(--accent);margin-top:2px}
+.guide-port{display:grid;grid-template-columns:62px 1fr;gap:6px 10px;font-size:.78em;color:var(--dim);line-height:1.35}
+.guide-port code{color:var(--cyan);font-family:'SF Mono','Consolas',monospace;font-size:.95em}
+
 @media(max-width:1200px){.grid{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.guide-grid{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -129,6 +141,46 @@ header h1{font-size:1.1em;font-weight:600}
 </header>
 
 <div class="grid">
+  <!-- 新人引导 -->
+  <div class="card span4">
+    <h2>新人使用引导</h2>
+    <div class="guide-grid">
+      <div class="guide-box">
+        <h3>1. 配置地平线 6 遥测</h3>
+        <ol class="guide-list">
+          <li>进入游戏设置，打开 <strong>Data Out / 遥测数据输出</strong>。</li>
+          <li>IP 填运行本程序的电脑地址；同一台电脑可填 <strong>127.0.0.1</strong>。</li>
+          <li>端口填 <strong>6688</strong>，协议为 UDP；保存后回到车辆中驾驶。</li>
+          <li>本页顶部显示 <strong>遥测正常</strong>，速度、转速开始变化即配置成功。</li>
+        </ol>
+      </div>
+
+      <div class="guide-box">
+        <h3>2. 方向盘 vJoy 换挡</h3>
+        <div class="guide-check">
+          <label><input type="checkbox"> 安装 vJoy，并在 vJoyConf 中启用设备 1。</label>
+          <label><input type="checkbox"> 设备 1 至少配置 12 个按钮。</label>
+          <label><input type="checkbox"> 启动 Key Agent，确认下方 vJoy 状态为就绪。</label>
+          <label><input type="checkbox"> 在 Forza 控制设置中绑定：按钮 1=倒挡，按钮 2-11=1-10 挡，按钮 12=离合。</label>
+          <label><input type="checkbox"> 用下方「vJoy 挡位绑定」按钮逐个测试，游戏内能识别即完成。</label>
+        </div>
+        <div class="gear-panel" id="gear-panel"></div>
+        <div class="vjoy-status" id="vjoy-status">正在检查 vJoy...</div>
+      </div>
+
+      <div class="guide-box">
+        <h3>3. 端口自查</h3>
+        <div class="guide-port">
+          <code>6688/UDP</code><div><strong>Forza 遥测输入</strong>，游戏 Data Out 发到这里。</div>
+          <code>8765/TCP</code><div><strong>主服务</strong>，dashboard、WebSocket、原生 overlay 默认使用。</div>
+          <code>7788/TCP</code><div><strong>Key Agent</strong>，vJoy / 键盘换挡接口。</div>
+          <code>8766/TCP</code><div><strong>Mac 代理</strong>，跨机器调试时由 proxy 使用。</div>
+          <code>9999/TCP</code><div><strong>静态 dashboard</strong>，仅本地开发用 python http.server 时占用。</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 速度 -->
   <div class="card">
     <h2>速度</h2>
@@ -355,13 +407,6 @@ header h1{font-size:1.1em;font-weight:600}
         <div id="as-log" style="height:100px;overflow-y:auto;font-family:'SF Mono','Consolas',monospace;font-size:.65em;line-height:1.5;color:var(--dim)"></div>
       </div>
     </div>
-  </div>
-
-  <!-- vJoy 挡位绑定 -->
-  <div class="card">
-    <h2>vJoy 挡位绑定 <span style="font-weight:400;font-size:.9em;color:var(--dim)">(点击挡位按钮用于 Forza 绑定)</span></h2>
-    <div class="gear-panel" id="gear-panel"></div>
-    <div class="vjoy-status" id="vjoy-status">正在检查 vJoy...</div>
   </div>
 
   <!-- 路面 + 日志 -->

@@ -114,6 +114,19 @@ const server = Bun.serve<{ channel: "dashboard" | "overlay" }>({
       refreshPowerCurveSnapshot();
       return Response.json(autoShift.getStatus(), { headers: cors });
     }
+    if (path === "/autoshift/export-fixture") {
+      refreshPowerCurveSnapshot();
+      const carParam = url.searchParams.get("car") ?? "current";
+      const carKey = carParam === "current" ? undefined : Number(carParam);
+      if (carParam !== "current" && !Number.isFinite(carKey)) {
+        return Response.json({ error: "car must be current or a numeric carKey" }, { status: 400, headers: cors });
+      }
+      const fixture = autoShift.exportShiftFixture(carKey);
+      if (!fixture) {
+        return Response.json({ error: "car fixture not found" }, { status: 404, headers: cors });
+      }
+      return Response.json(fixture, { headers: cors });
+    }
     if (path === "/overlay/state") {
       return Response.json(buildOverlayState(), { headers: cors });
     }
@@ -367,6 +380,8 @@ function buildOverlayModel() {
     autoshift: {
       enabled: status.enabled,
       currentCar: status.currentCar,
+      learningStatus: status.learningStatus,
+      fallbackGears: status.fallbackGears,
       blockUpshift: status.blockUpshift,
       blockDownshift: status.blockDownshift,
       lastShift: status.lastShift,

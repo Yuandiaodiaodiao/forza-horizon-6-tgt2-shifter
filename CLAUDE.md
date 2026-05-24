@@ -49,7 +49,7 @@ Windows (${TGT2_WINDOWS_HOST})                 Mac (${TGT2_MAC_HOST})
 | `src/forza.ts` | Forza UDP telemetry parser |
 | `src/autoshift.ts` | First-principles power-curve auto-shift |
 | `src/power_curve_pipeline.ts` | Non-blocking shared snapshot reader / Worker input |
-| `src/power_curve_worker.ts` | Per-car 1 RPM curve learning and median aggregation |
+| `src/power_curve_worker.ts` | Per-car 1 RPM curve learning, upper-quantile aggregation, and output smoothing |
 | `src/power_curve_types.ts` | Power curve snapshot and worker message contract |
 | `src/key_agent.ts` | vJoy/key input agent |
 | `src/proxy.ts` | Mac WebSocket relay proxy |
@@ -90,11 +90,14 @@ The active algorithm does not use a neural network. It is a direct physics looku
 ### Guards
 
 - Fuel-cut / post-peak usable RPM ceiling
+- Fuel-cut / ceiling-triggered upshifts have an independent `500ms` debounce to prevent one limiter event from chaining multiple upshifts.
 - Brake blocks upshift
 - Airborne protection
 - Slip guard, relaxed in low gears
 - Minimum shift cooldown
 - Post-shift settle window
+- Shift execution must wait for three conditions before releasing planning: telemetry target gear, clutch released, and RPM matching wheel speed plus learned gear ratio within tolerance. Keep this wait bounded by timeout.
+- All key-agent HTTP calls from auto-shift must use a hard timeout. A stuck `/gear/hold/N` request can otherwise leave `shiftExecutionLocked=true` and stop automatic planning while the process still appears alive.
 - Reversal lock
 - Larger threshold for downshift advantage
 - Directional manual paddle override
@@ -114,7 +117,8 @@ WebSocket clients are bounded by `TGT2_WS_MAX_BUFFER_KB` (default `512`). Discon
 ### Power Curve Worker
 
 - The worker accepts only required scalar telemetry fields and maintains full-load power samples in 1 RPM bins per car.
-- Consumer snapshots use median aggregation through `1 -> 3 -> 10 RPM/bin`; overlay snapshots aggregate once more to `100 RPM/bin`.
+- Consumer snapshots use upper-quantile aggregation through `1 -> 3 -> 10 RPM/bin`; overlay snapshots aggregate once more to `100 RPM/bin`.
+- Published curves are smoothed before export; points that sit too far from the local smooth line are replaced by interpolated values from neighboring inliers.
 - Snapshots are published through double-buffered `SharedArrayBuffer` storage. Auto-shift and overlay read the most recent complete snapshot without waiting for curve recalculation.
 - Worker source bins persist in `data/power-curves-worker.json`; legacy auto-shift curve data seeds the worker when no worker-owned profile exists.
 
@@ -138,6 +142,7 @@ Interpret diagnostics as follows:
 - `captured` stopped but `dispatched` rising is a distributor bug.
 - `captureReplaced` rising means UDP input exceeds the selected distribution rate; the system intentionally keeps only the newest frame.
 - `algorithmReplaced` rising means shift evaluation is slower than telemetry arrival and is consuming latest frames only.
+- `/autoshift/status` returning `shiftExecutionLocked: true` for multiple seconds means the auto-shift executor is stuck, usually in key-agent I/O or shift synchronization. Check `recentShifts` and `decisionTrace` for the last `EXEC ...` without a matching `SYNC ...`.
 - `maxWsBuffered` rising or `slowDisconnects` increasing identifies a slow dashboard/overlay consumer.
 - `maxAlgorithmMs` above one telemetry period identifies algorithm/model generation blocking the real-time loop.
 - `maxDispatchDelayMs` reveals timer scheduling delays independently of WebSocket buffers.
@@ -152,6 +157,19 @@ Interpret diagnostics as follows:
 - Do not assume one WebSocket receive result is one JSON message. A learned power curve can fragment across frames; reassemble through `EndOfMessage` before parsing. Dropping fragments causes the overlay to remain on `Learning curve...` while `/overlay/state` already contains curve data.
 - Keep the WebSocket receive loop off the WPF `DispatcherTimer`. Use a background receive pump that overwrites latest model/frame snapshots; let the UI timer render only the newest available frame.
 - Send a reduced overlay-only power curve, currently capped near 160 representative points. The browser dashboard may retain full detail, but sending hundreds of points every model refresh delays the real-time overlay stream.
+- Gear RPM bands must render the thresholds exported by auto-shift (`leftRpm` / `rightRpm`) directly. Do not repair, expand, or infer intervals in PowerShell.
+- Missing or incomplete learned gear data should still appear as fallback threshold bands for existing forward gears. N/R gears are not rendered.
+- Use ASCII overlay status labels (`LEARNED`, `LEARNING / FALLBACK`) to avoid mojibake in the PowerShell/WPF text path.
+
+### Auto-Shift Fixture Export
+
+The Windows server exposes the current learned shift model for local regression tests:
+
+```bash
+curl "http://$TGT2_WINDOWS_HOST:8765/autoshift/export-fixture?car=current"
+```
+
+The JSON includes gear ratios, power curve points, learned/fallback shift thresholds, fuel-cut data, and learning status. Use this endpoint to pull car-specific test fixtures back to Mac instead of scraping logs.
 
 ### Windows Timing Notes
 
@@ -212,6 +230,8 @@ sshpass -p "$TGT2_WINDOWS_PASSWORD" scp -o StrictHostKeyChecking=no \
   dist/tgt2-telemetry.exe \
   "$TGT2_WINDOWS_USER@$TGT2_WINDOWS_HOST:Desktop/tgt2-reader/dist/tgt2-telemetry.exe"
 ```
+
+If SCP cannot overwrite `tgt2-telemetry.exe`, the running Windows process is holding the file. Upload to `tgt2-telemetry.next.exe`, request `/admin/restart` with that `exePath`, then overwrite the official filename after the old process exits. Verify `/autoshift/status` afterwards; `shiftExecutionLocked` should be `false` when idle.
 
 Use the remote-home-relative `Desktop/tgt2-reader/...` SCP path on this machine. Do not reuse an unquoted Windows backslash path loaded through shell `.env`; backslashes may be consumed and create a wrong destination directory.
 

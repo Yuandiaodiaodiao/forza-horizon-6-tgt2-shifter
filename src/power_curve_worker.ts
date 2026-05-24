@@ -23,6 +23,12 @@ const MAX_SAMPLES_PER_BIN = 80;
 const MIN_THROTTLE = 0.80;
 const MAX_RUMBLE = 0.05;
 const MAX_PUDDLE = 0.02;
+const TORQUE_QUANTILE = 0.85;
+const AGGREGATE_QUANTILE = 0.75;
+const SMOOTH_WINDOW_RPM = 260;
+const OUTLIER_MAD_MULTIPLIER = 3.0;
+const OUTLIER_MIN_HP = 18;
+const OUTLIER_FRACTION = 0.14;
 const encoder = new TextEncoder();
 
 let header: Int32Array | null = null;
@@ -87,7 +93,7 @@ function acceptSample(frame: PowerCurveTelemetry) {
   }
 
   const bin = car.bins.get(rpm) ?? { count: 0, torqueSamples: [] };
-  const learnedTorque = median(bin.torqueSamples);
+  const learnedTorque = quantile(bin.torqueSamples, TORQUE_QUANTILE);
   if (learnedTorque > 0 && torqueNm < learnedTorque * 0.90) return;
   if (bin.torqueSamples.length >= MAX_SAMPLES_PER_BIN && torqueNm <= bin.torqueSamples[0]) return;
 
@@ -109,13 +115,14 @@ function buildCarSnapshot(carKey: number, car: Car): PowerCurveCarSnapshot {
     .filter(([, bin]) => bin.count > 0 && bin.torqueSamples.length > 0)
     .map(([rpm, bin]) => ({
       rpm,
-      hp: median(bin.torqueSamples) * rpm / NM_RPM_PER_HP,
+      hp: quantile(bin.torqueSamples, TORQUE_QUANTILE) * rpm / NM_RPM_PER_HP,
       samples: bin.count,
     }))
     .sort((a, b) => a.rpm - b.rpm);
-  const threeRpm = aggregateMedian(oneRpm, 3);
-  const powerCurve = aggregateMedian(threeRpm, 10).filter(point => point.samples >= 2);
-  const overlayCurve = aggregateMedian(powerCurve, 100);
+  const threeRpm = aggregatePower(oneRpm, 3);
+  const rawPowerCurve = aggregatePower(threeRpm, 10).filter(point => point.samples >= 2);
+  const powerCurve = smoothAndRepairCurve(rawPowerCurve);
+  const overlayCurve = smoothAndRepairCurve(aggregatePower(powerCurve, 100));
   const peak = powerCurve.reduce((best, point) => point.hp > best.hp ? point : best, { rpm: 0, hp: 0, samples: 0 });
   return {
     carKey,
@@ -129,7 +136,7 @@ function buildCarSnapshot(carKey: number, car: Car): PowerCurveCarSnapshot {
   };
 }
 
-function aggregateMedian(points: PowerCurvePoint[], width: number): PowerCurvePoint[] {
+function aggregatePower(points: PowerCurvePoint[], width: number): PowerCurvePoint[] {
   const buckets = new Map<number, PowerCurvePoint[]>();
   for (const point of points) {
     const rpm = Math.round(point.rpm / width) * width;
@@ -141,9 +148,81 @@ function aggregateMedian(points: PowerCurvePoint[], width: number): PowerCurvePo
     .sort((a, b) => a[0] - b[0])
     .map(([rpm, values]) => ({
       rpm,
-      hp: round(median(values.map(point => point.hp))),
+      hp: round(weightedQuantile(values, AGGREGATE_QUANTILE)),
       samples: values.reduce((sum, point) => sum + point.samples, 0),
     }));
+}
+
+function smoothAndRepairCurve(points: PowerCurvePoint[]): PowerCurvePoint[] {
+  if (points.length < 5) return points;
+
+  const baseline = points.map((point, index) => localSmoothHp(points, index));
+  const residuals = points.map((point, index) => Math.abs(point.hp - baseline[index]));
+  const mad = quantile(residuals, 0.50);
+  const keep = points.map((point, index) => {
+    const threshold = Math.max(OUTLIER_MIN_HP, baseline[index] * OUTLIER_FRACTION, mad * OUTLIER_MAD_MULTIPLIER);
+    return residuals[index] <= threshold;
+  });
+
+  const repaired = points.map((point, index) => {
+    if (keep[index]) {
+      const hp = point.hp * 0.72 + baseline[index] * 0.28;
+      return { ...point, hp: round(hp) };
+    }
+    return { ...point, hp: round(interpolateKeptHp(points, baseline, keep, index)) };
+  });
+
+  return repaired.map((point, index) => ({
+    ...point,
+    hp: round(point.hp * 0.82 + localSmoothHp(repaired, index) * 0.18),
+  }));
+}
+
+function localSmoothHp(points: PowerCurvePoint[], index: number): number {
+  const center = points[index];
+  let weightedHp = 0;
+  let weightSum = 0;
+
+  for (const point of points) {
+    const distance = Math.abs(point.rpm - center.rpm);
+    if (distance > SMOOTH_WINDOW_RPM) continue;
+    const distanceWeight = 1 - distance / (SMOOTH_WINDOW_RPM + 1);
+    const sampleWeight = Math.max(1, Math.sqrt(point.samples));
+    const weight = distanceWeight * sampleWeight;
+    weightedHp += point.hp * weight;
+    weightSum += weight;
+  }
+
+  return weightSum > 0 ? weightedHp / weightSum : center.hp;
+}
+
+function interpolateKeptHp(points: PowerCurvePoint[], baseline: number[], keep: boolean[], index: number): number {
+  let left = index - 1;
+  while (left >= 0 && !keep[left]) left--;
+  let right = index + 1;
+  while (right < points.length && !keep[right]) right++;
+
+  if (left >= 0 && right < points.length) {
+    const lo = points[left];
+    const hi = points[right];
+    const t = (points[index].rpm - lo.rpm) / Math.max(1, hi.rpm - lo.rpm);
+    return lo.hp + (hi.hp - lo.hp) * t;
+  }
+  if (left >= 0) return points[left].hp + (baseline[index] - baseline[left]);
+  if (right < points.length) return points[right].hp + (baseline[index] - baseline[right]);
+  return baseline[index];
+}
+
+function weightedQuantile(points: PowerCurvePoint[], p: number): number {
+  const sorted = [...points].sort((a, b) => a.hp - b.hp);
+  const total = sorted.reduce((sum, point) => sum + Math.max(1, point.samples), 0);
+  const target = total * Math.max(0, Math.min(1, p));
+  let seen = 0;
+  for (const point of sorted) {
+    seen += Math.max(1, point.samples);
+    if (seen >= target) return point.hp;
+  }
+  return sorted[sorted.length - 1]?.hp ?? 0;
 }
 
 function publish() {
@@ -236,11 +315,11 @@ function cleanSamples(samples: number[]): number[] {
     .sort((a, b) => a - b);
 }
 
-function median(values: number[]): number {
+function quantile(values: number[], p: number): number {
   if (values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p * sorted.length) - 1));
+  return sorted[idx];
 }
 
 function round(value: number): number {

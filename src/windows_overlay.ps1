@@ -375,11 +375,13 @@ function Draw-Overlay($state) {
 
   $gearRows = @()
   $gearSkip = @()
+  $fallbackGears = @()
   if ($car -and $car.gears) {
     foreach ($prop in $car.gears.PSObject.Properties) {
       $gearNum = 0
       if ([int]::TryParse([string]$prop.Name, [ref]$gearNum) -and $gearNum -ge 1 -and $gearNum -le 10) {
         $info = $prop.Value
+        if ($info -and $info.thresholdSource -eq "fallback") { $fallbackGears += $gearNum }
         if ($info -and $null -ne $info.leftRpm -and $null -ne $info.rightRpm) {
           $leftRpm = [double]$info.leftRpm
           $rightRpm = [double]$info.rightRpm
@@ -394,6 +396,13 @@ function Draw-Overlay($state) {
       }
     }
   }
+  $learningStatus = if ($state.autoshift -and $state.autoshift.learningStatus) { [string]$state.autoshift.learningStatus } else { "" }
+  if ([string]::IsNullOrWhiteSpace($learningStatus)) {
+    $learningStatus = if ($fallbackGears.Count -gt 0) { "learning" } else { "complete" }
+  }
+  $statusText = if ($learningStatus -eq "complete") { "LEARNED" } else { "LEARNING / FALLBACK" }
+  $statusColor = if ($learningStatus -eq "complete") { $green } else { $yellow }
+  Add-Text $statusText ($padL + 4) ($padT + 4) 12 $statusColor
   $gearRows = @($gearRows | Sort-Object gear)
   if ($gearRows.Count -gt 0) {
     $rowH = 7.0
@@ -414,9 +423,10 @@ function Draw-Overlay($state) {
   }
   $gearNames = if ($gearRows.Count -gt 0) { ($gearRows | ForEach-Object { "G$($_.gear)[$([int]$_.left)-$([int]$_.right)]" }) -join "," } else { "none" }
   $skipText = if ($gearSkip.Count -gt 0) { " skip=" + ($gearSkip -join ",") } else { "" }
-  $gearKey = "{0}:{1}:{2}" -f $state.modelTs, $gearNames, $skipText
+  $gearKey = "{0}:{1}:{2}:{3}" -f $state.modelTs, $gearNames, $skipText, $learningStatus
   if ($gearKey -ne $script:lastGearOverlayKey) {
-    Write-OverlayLog ("gearOverlay rows={0} {1}{2}" -f $gearRows.Count, $gearNames, $skipText)
+    $fallbackText = if ($fallbackGears.Count -gt 0) { " fallback=G" + (($fallbackGears | Sort-Object) -join ",G") } else { "" }
+    Write-OverlayLog ("gearOverlay status={0} rows={1} {2}{3}{4}" -f $learningStatus, $gearRows.Count, $gearNames, $skipText, $fallbackText)
     $script:lastGearOverlayKey = $gearKey
   }
 
