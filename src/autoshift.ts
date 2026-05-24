@@ -51,6 +51,7 @@ interface CarProfile {
   wheelRadiusCount: number;
   totalSamples: number;
   totalShifts: number;
+  discoveredTopGear: number;
   shiftTiming: ShiftTimingProfile;
   firstSeen: number;
 }
@@ -271,6 +272,7 @@ export class AdaptiveAutoShift {
       wheelRadiusCount: car.wheelRadiusCount,
       totalSamples: car.totalSamples,
       totalShifts: car.totalShifts,
+      discoveredTopGear: car.discoveredTopGear,
       shiftTiming: car.shiftTiming,
       firstSeen: car.firstSeen,
       gears: {} as Record<number, any>,
@@ -354,6 +356,7 @@ export class AdaptiveAutoShift {
           wheelRadiusCount: Number(raw.wheelRadiusCount) || 0,
           totalSamples: raw.totalSamples,
           totalShifts: raw.totalShifts,
+          discoveredTopGear: Number(raw.discoveredTopGear) || 0,
           shiftTiming: this.normalizeShiftTiming(raw.shiftTiming),
           firstSeen: raw.firstSeen,
         },
@@ -511,6 +514,7 @@ export class AdaptiveAutoShift {
         wheelRadiusCount: 0,
         totalSamples: 0,
         totalShifts: 0,
+        discoveredTopGear: 0,
         shiftTiming: this.defaultShiftTiming(),
         firstSeen: Date.now(),
       });
@@ -695,7 +699,7 @@ export class AdaptiveAutoShift {
         const engineRadS = rpm * Math.PI * 2 / 60;
         const ratio = engineRadS / drivenAvg;
         if (this.isPlausibleRatioSample(car, gear, ratio)) {
-          if (!this.isRawGearRatioMonotonicValid(car, gear)) {
+          if (p.ratioCount >= 10 && !this.isRawGearRatioMonotonicValid(car, gear)) {
             p.ratioSum = 0;
             p.ratioCount = 0;
           }
@@ -1043,7 +1047,7 @@ export class AdaptiveAutoShift {
     const fallbackUp = Math.min(usableCeiling, maxRpm * this.config.fallbackUpshiftFraction);
     const fallbackDown = Math.max(car.idleRpm * 1.5, maxRpm * 0.50);
     const canUseLearned = this.hasLearnedShiftModel(car, gear);
-    const canDiscoverNextGear = gear < Math.min(this.config.maxGear, 6);
+    const canDiscoverNextGear = gear < this.getFallbackDiscoveryMaxGear(car);
 
     if (canUseLearned) {
       const learnedUp = gear < highestLearnedGear ? this.getLearnedUpshiftRpm(car, gear, maxRpm) : null;
@@ -1086,8 +1090,20 @@ export class AdaptiveAutoShift {
   }
 
   private getFallbackDiscoveryMaxGear(car: CarProfile): number {
-    const contiguous = this.getHighestContiguousRatioGear(car);
-    return Math.min(this.config.maxGear, Math.max(1, contiguous) + 2);
+    const observed = this.getHighestObservedForwardGear(car);
+    return car.discoveredTopGear > 0 && car.discoveredTopGear >= observed
+      ? car.discoveredTopGear
+      : this.config.maxGear;
+  }
+
+  private getHighestObservedForwardGear(car: CarProfile): number {
+    let highest = 0;
+    for (const [gear, profile] of car.gears) {
+      if (gear >= 1 && gear <= this.config.maxGear && profile.sampleCount > 0) {
+        highest = Math.max(highest, gear);
+      }
+    }
+    return highest;
   }
 
   /**
@@ -1415,12 +1431,14 @@ export class AdaptiveAutoShift {
   private shiftExecutionLocked = false;
   private latestTelemetryGear = 0;
   private latestTelemetryClutch = 255;
+  private latestTelemetryAt = 0;
   private latestTelemetryFrame: TelemetryFrame | null = null;
   private pendingShiftTiming: PendingShiftTiming | null = null;
 
   noteTelemetryGear(gear: number, clutch?: number, frame?: TelemetryFrame) {
     if (gear >= -1 && gear <= this.config.maxGear) this.latestTelemetryGear = gear;
     if (clutch != null && clutch >= 0 && clutch <= 255) this.latestTelemetryClutch = clutch;
+    this.latestTelemetryAt = Date.now();
     if (frame) this.latestTelemetryFrame = frame;
     this.completePendingShiftTiming();
   }
@@ -1567,6 +1585,7 @@ export class AdaptiveAutoShift {
         return;
       }
 
+      const commandSentAt = Date.now();
       const deadline = Date.now() + this.config.shiftExecutionTimeoutMs;
       while (!this.isShiftSynced(targetGear) && Date.now() < deadline) {
         await Bun.sleep(10);
@@ -1587,6 +1606,14 @@ export class AdaptiveAutoShift {
         }
       } else {
         this.traceDecision(`SYNC timeout target=${targetGear} telemetry=${this.latestTelemetryGear} clutch=${this.latestTelemetryClutch}`, true);
+        const hasPostCommandTelemetry = this.latestTelemetryAt >= commandSentAt;
+        if (direction === "up" && hasPostCommandTelemetry && this.latestTelemetryGear === fromGear && fromGear > car.discoveredTopGear) {
+          car.discoveredTopGear = fromGear;
+          this.dirty = true;
+          this.traceDecision(`DISCOVERY top-gear confirmed g${fromGear}: upshift target=${targetGear} left telemetry unchanged`, true);
+        } else if (direction === "up" && !hasPostCommandTelemetry) {
+          this.traceDecision(`DISCOVERY top-gear skipped g${fromGear}: no telemetry after upshift command target=${targetGear}`, true);
+        }
         this.pendingShiftTiming = null;
       }
     } finally {
@@ -1792,7 +1819,7 @@ export class AdaptiveAutoShift {
     const usableCeiling = this.getUsablePowerCeiling(car, max_rpm);
     const effectiveCeiling = usableCeiling.rpm;
 
-    const canDiscoverNextGear = gear < Math.min(this.config.maxGear, 6);
+    const canDiscoverNextGear = gear < this.getFallbackDiscoveryMaxGear(car);
     const ceilingMaxGear = this.hasLearnedShiftModel(car, gear) && highestLearnedGear > gear
       ? highestLearnedGear
       : canDiscoverNextGear ? this.getFallbackDiscoveryMaxGear(car) : highestLearnedGear;
@@ -2106,6 +2133,7 @@ export class AdaptiveAutoShift {
       } : null,
       car: car ? {
         totalSamples: car.totalSamples,
+        discoveredTopGear: car.discoveredTopGear || null,
         powerBins: car.powerByRpm.size,
         maxRpm: car.maxRpm,
         idleRpm: car.idleRpm,
@@ -2153,6 +2181,7 @@ export class AdaptiveAutoShift {
       cars[ordinal] = {
         totalSamples: car.totalSamples,
         totalShifts: car.totalShifts,
+        discoveredTopGear: car.discoveredTopGear || null,
         maxRpm: car.maxRpm,
         idleRpm: car.idleRpm,
         powerBins: car.powerByRpm.size,
@@ -2242,6 +2271,7 @@ export class AdaptiveAutoShift {
       wheelRadiusCount: car.wheelRadiusCount,
       totalSamples: car.totalSamples,
       totalShifts: car.totalShifts,
+      discoveredTopGear: car.discoveredTopGear || null,
       highestLearnedGear,
       learningStatus: Object.values(gears).every((g: any) => g.thresholdSource === "learned") ? "complete" : "learning",
       gears,
