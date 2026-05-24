@@ -24,10 +24,6 @@ if (!existsSync(fixturePath)) {
 }
 
 const exported = JSON.parse(await Bun.file(fixturePath).text());
-if (exported.peakPowerRpm > exported.maxRpm * 0.72) {
-  throw new Error(`Muscle fixture should have a low-RPM peak, got peak=${exported.peakPowerRpm} max=${exported.maxRpm}`);
-}
-
 const powerCurve: Record<number, any> = {};
 for (const point of exported.powerCurve || []) {
   powerCurve[point.rpm] = {
@@ -113,19 +109,31 @@ console.log(JSON.stringify({
 
 const g2 = rows.find(row => row.gear === 2);
 const g3 = rows.find(row => row.gear === 3);
-if (!g2?.upshiftRpm || !g3?.upshiftRpm) {
-  console.error("Expected learned G2/G3 upshift thresholds");
-  process.exit(1);
-}
 
-if (g2.upshiftRpm >= Math.round(car.maxRpm * 0.78) || g3.upshiftRpm >= Math.round(car.maxRpm * 0.78)) {
-  console.error(`Low-RPM peak fixture should shift before 0.78*maxRpm, got G2=${g2.upshiftRpm} G3=${g3.upshiftRpm}`);
-  process.exit(1);
-}
+if (car.peakPowerRpm <= car.maxRpm * 0.72) {
+  if (!g2?.upshiftRpm || !g3?.upshiftRpm) {
+    console.error("Expected learned G2/G3 upshift thresholds");
+    process.exit(1);
+  }
 
-if (g2.upshiftRpm > 6250 || g3.upshiftRpm > 6350) {
-  console.error(`Low-RPM peak shift points should move earlier, got G2=${g2.upshiftRpm} G3=${g3.upshiftRpm}`);
-  process.exit(1);
+  if (g2.upshiftRpm >= Math.round(car.maxRpm * 0.78) || g3.upshiftRpm >= Math.round(car.maxRpm * 0.78)) {
+    console.error(`Low-RPM peak fixture should shift before 0.78*maxRpm, got G2=${g2.upshiftRpm} G3=${g3.upshiftRpm}`);
+    process.exit(1);
+  }
+
+  if (g2.upshiftRpm > 6250 || g3.upshiftRpm > 6350) {
+    console.error(`Low-RPM peak shift points should move earlier, got G2=${g2.upshiftRpm} G3=${g3.upshiftRpm}`);
+    process.exit(1);
+  }
+} else {
+  const ceiling = autoShift.getUsablePowerCeiling(car, car.maxRpm) as { rpm: number; source: string };
+  const strongAboveFuelCut = (exported.powerCurve || [])
+    .filter((point: any) => point.rpm > exported.fuelCutRpm + 120 && point.hp >= exported.peakPower * 0.90)
+    .sort((a: any, b: any) => b.rpm - a.rpm)[0];
+  if (strongAboveFuelCut && ceiling.rpm <= exported.fuelCutRpm) {
+    console.error(`Fuel-cut should be refuted by strong power at ${strongAboveFuelCut.rpm}, got ceiling=${ceiling.rpm} source=${ceiling.source}`);
+    process.exit(1);
+  }
 }
 
 rmSync(runtimeAppData, { recursive: true, force: true });

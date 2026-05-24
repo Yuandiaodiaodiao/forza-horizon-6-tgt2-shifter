@@ -206,6 +206,9 @@ export class AdaptiveAutoShift {
     fuelCutDetectThrottleMin: 0.80,
     /** High-RPM samples below this fraction of learned peak power indicate fuel cut / limiter. */
     fuelCutPowerDropRatio: 0.82,
+    /** Strong learned power above a detected fuel-cut RPM refutes that fuel-cut estimate. */
+    fuelCutRefutePowerRatio: 0.90,
+    fuelCutRefuteRpmMargin: 120,
     /** RPM growth below this amount across the recent window counts as limiter plateau. */
     fuelCutPlateauRpmDelta: 80,
     /** Do not reverse an automatic shift immediately unless a hard safety rule fires. */
@@ -622,29 +625,37 @@ export class AdaptiveAutoShift {
     const maxRecentRpm = Math.max(...recent.map(f => f.rpm));
     const rpmDelta = recent[recent.length - 1].rpm - recent[0].rpm;
     const rpmSpread = maxRecentRpm - minRecentRpm;
-    const powerDrop = car.peakPower > 50 && powerNow < car.peakPower * this.config.fuelCutPowerDropRatio;
+    const smoothedPowerNow = this.lookupPower(car, rpmNow);
+    const smoothedPowerDrop = smoothedPowerNow !== null && car.peakPower > 50
+      && smoothedPowerNow < car.peakPower * this.config.fuelCutPowerDropRatio;
     const plateau = Math.abs(rpmDelta) < this.config.fuelCutPlateauRpmDelta || rpmSpread < this.config.fuelCutPlateauRpmDelta * 1.5;
     const nearTop = rpmNow > car.maxRpm * this.config.fuelCutDetectRpmFraction;
     const peakLooksCredible = car.peakPowerRpm > car.maxRpm * this.config.postPeakCeilingMinPeakRpmFraction;
     const postPeakPlateau = peakLooksCredible
       && rpmNow > car.peakPowerRpm + this.config.postPeakCeilingRpmMargin * 0.5
       && plateau
-      && powerNow < car.peakPower * 0.92;
+      && smoothedPowerDrop;
     const hardZero = powerNow <= 5 && recent.some(s => s.power > 50);
 
-    if (nearTop && (hardZero || (plateau && powerDrop) || postPeakPlateau)) {
+    if (nearTop && (hardZero || (plateau && smoothedPowerDrop) || postPeakPlateau)) {
       const cutRpm = Math.round(maxRecentRpm);
+      const refuteRpm = this.getStrongPowerRpmAbove(car, cutRpm);
+      if (refuteRpm !== null) {
+        this.traceDecision(`IGNORE fuel-cut candidate rpm=${cutRpm} refutedByStrongPower=${refuteRpm} p=${powerNow.toFixed(0)} smooth=${smoothedPowerNow?.toFixed(0) ?? "-"} peak=${car.peakPower.toFixed(0)} source=${postPeakPlateau ? "post-peak" : hardZero ? "zero" : "plateau"}`, true);
+        this.fuelCutSamples = [];
+        return;
+      }
       const minCredibleCutRpm = this.getMinCredibleFuelCutRpm(car);
       if (cutRpm < minCredibleCutRpm) {
-        this.traceDecision(`IGNORE fuel-cut candidate rpm=${cutRpm} min=${minCredibleCutRpm.toFixed(0)} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} peakRpm=${car.peakPowerRpm} throttle=${throttleNow.toFixed(2)}`, true);
+        this.traceDecision(`IGNORE fuel-cut candidate rpm=${cutRpm} min=${minCredibleCutRpm.toFixed(0)} p=${powerNow.toFixed(0)} smooth=${smoothedPowerNow?.toFixed(0) ?? "-"} peak=${car.peakPower.toFixed(0)} peakRpm=${car.peakPowerRpm} throttle=${throttleNow.toFixed(2)}`, true);
         this.fuelCutSamples = [];
         return;
       }
       const source = hardZero
         ? "zero-power"
         : postPeakPlateau
-          ? `post-peak plateau p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)} dRpm=${rpmDelta.toFixed(0)} spread=${rpmSpread.toFixed(0)}`
-          : `plateau/drop p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)} dRpm=${rpmDelta.toFixed(0)} spread=${rpmSpread.toFixed(0)}`;
+          ? `post-peak plateau smooth=${smoothedPowerNow?.toFixed(0) ?? "-"} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)} dRpm=${rpmDelta.toFixed(0)} spread=${rpmSpread.toFixed(0)}`
+          : `plateau/drop smooth=${smoothedPowerNow?.toFixed(0) ?? "-"} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)} dRpm=${rpmDelta.toFixed(0)} spread=${rpmSpread.toFixed(0)}`;
       this.updateFuelCut(car, cutRpm, source);
       this.fuelCutSamples = [];
     }
@@ -668,6 +679,19 @@ export class AdaptiveAutoShift {
       this.log(`FUEL-CUT confirmed at ${car.fuelCutRpm} RPM via ${source} (confidence=${car.fuelCutConfidence.toFixed(2)})`);
     }
     this.dirty = true;
+  }
+
+  private getStrongPowerRpmAbove(car: CarProfile, rpm: number): number | null {
+    if (car.peakPower <= 50) return null;
+    const minStrongPower = car.peakPower * this.config.fuelCutRefutePowerRatio;
+    const minRpm = rpm + this.config.fuelCutRefuteRpmMargin;
+    let highest: number | null = null;
+    for (const point of this.getCurveLookup(car).points) {
+      if (point.rpm >= minRpm && point.power >= minStrongPower) {
+        highest = point.rpm;
+      }
+    }
+    return highest;
   }
 
   // --- Learning retained here for drivetrain/fuel-cut state; power curve is worker-owned ---
@@ -1010,11 +1034,9 @@ export class AdaptiveAutoShift {
 
     const usableCeiling = this.getUsablePowerCeiling(car, maxRpm).rpm;
     const peakRpm = car.peakPowerRpm > 0 ? car.peakPowerRpm : maxRpm * 0.72;
-    const peakIsHighRpm = peakRpm >= maxRpm * this.config.postPeakCeilingMinPeakRpmFraction;
     const minUpshiftRpm = Math.max(
       car.idleRpm * 2.2,
-      peakRpm + 450,
-      peakIsHighRpm ? maxRpm * 0.78 : 0
+      peakRpm + 450
     );
     const startRpm = Math.max(minUpshiftRpm, maxRpm * 0.35);
     let best: number | null = null;
@@ -1135,9 +1157,12 @@ export class AdaptiveAutoShift {
     let ceiling = maxRpm * 0.97;
     let source = "maxRpm";
 
-    if (car.fuelCutRpm > 0 && car.fuelCutConfidence >= 0.3) {
+    const fuelCutRefuteRpm = car.fuelCutRpm > 0 ? this.getStrongPowerRpmAbove(car, car.fuelCutRpm) : null;
+    if (car.fuelCutRpm > 0 && car.fuelCutConfidence >= 0.3 && fuelCutRefuteRpm === null) {
       ceiling = Math.min(ceiling, car.fuelCutRpm - this.config.rpmBinSize);
       source = `fuel-cut@${car.fuelCutRpm}`;
+    } else if (car.fuelCutRpm > 0 && fuelCutRefuteRpm !== null) {
+      source = `fuel-cut-refuted@${car.fuelCutRpm}/strong@${fuelCutRefuteRpm}`;
     }
 
     if (car.peakPowerRpm > 0 && car.peakPower > 0) {
