@@ -103,6 +103,21 @@ interface TelemetryFrame {
   puddle_depth: number[];
 }
 
+type ShiftIntent = "up" | "down" | null;
+
+interface ShiftDecision {
+  wantShift: ShiftIntent;
+  targetGear: number;
+  reason: string;
+  decisionTrace: string;
+  shiftAdvantage: number;
+  breakEvenSec: number;
+  effectiveMinAdvantage: number;
+  criticalShift: boolean;
+  holdReason: string;
+  thresholdTrace?: string;
+}
+
 export class AdaptiveAutoShift {
   private carProfiles: Map<number, CarProfile> = new Map();
   private curveLookupCache = new WeakMap<CarProfile, CurveLookupCache>();
@@ -1316,6 +1331,203 @@ export class AdaptiveAutoShift {
     return ws.reduce((s, w) => s + Math.abs(w), 0) / 4;
   }
 
+  private evaluateShiftDecision(
+    car: CarProfile,
+    frame: TelemetryFrame,
+    gear: number,
+    wheelRadS: number,
+    effectiveCeiling: number,
+    highestLearnedGear: number,
+    options: { hysteresisMultiplier?: number } = {}
+  ): ShiftDecision {
+    const { rpm, max_rpm, idle_rpm, speed_kmh, brake } = frame;
+    const hasCurrentGearData = this.isGearDataComplete(car, gear);
+    const hasAdjacentData = (gear >= highestLearnedGear || this.isGearDataComplete(car, gear + 1))
+      && (gear <= 1 || this.isGearDataComplete(car, gear - 1));
+    const usePowerCurve = hasCurrentGearData && hasAdjacentData && wheelRadS > 1;
+
+    const comparison = usePowerCurve
+      ? this.comparePowerAcrossGears(car, gear, wheelRadS, effectiveCeiling)
+      : null;
+
+    let wantShift: ShiftIntent = null;
+    let reason = "";
+    let decisionTrace = "";
+    let shiftAdvantage = 0;
+    let breakEvenSec = Infinity;
+    let effectiveMinAdvantage = this.config.minPowerAdvantageHp;
+    let criticalShift = false;
+    let targetGear = gear;
+    let thresholdTrace: string | undefined;
+
+    if (comparison) {
+      const { bestGear, currentPower, powers, slopeInfo, powerTrace } = comparison;
+      decisionTrace = `mode=power gear=${gear} best=${bestGear} ${powerTrace}`;
+
+      if (bestGear !== gear) {
+        const target = powers.get(bestGear)!;
+        const advantage = target.power - currentPower;
+        shiftAdvantage = advantage;
+
+        const shiftTimeSec = this.getShiftPenaltyMs(car) / 1000;
+        const energyLostDuringShift = currentPower * shiftTimeSec;
+        breakEvenSec = advantage > 0 ? energyLostDuringShift / advantage : Infinity;
+
+        const hystMult = options.hysteresisMultiplier ?? this.getHysteresisMultiplier();
+        const direction = bestGear > gear ? "up" : "down";
+        const directionMult = direction === "down" ? this.config.downshiftAdvantageMultiplier : 1;
+        effectiveMinAdvantage = this.config.minPowerAdvantageHp * hystMult * directionMult;
+
+        if (advantage >= effectiveMinAdvantage && breakEvenSec < 2.0) {
+          wantShift = direction;
+          targetGear = bestGear;
+          const hystTag = hystMult > 1 ? ` hyst×${hystMult.toFixed(1)}` : "";
+          const downTag = directionMult > 1 ? ` down×${directionMult.toFixed(1)}` : "";
+          const slopeTag = slopeInfo ? ` [${slopeInfo}]` : "";
+          reason = `power: g${gear}=${currentPower.toFixed(0)}hp @${powers.get(gear)!.rpm.toFixed(0)}rpm → g${bestGear}=${target.power.toFixed(0)}hp @${target.rpm.toFixed(0)}rpm (Δ=${advantage.toFixed(0)}hp, min=${effectiveMinAdvantage.toFixed(0)}hp, breakeven=${breakEvenSec.toFixed(1)}s${hystTag}${downTag})${slopeTag}`;
+        } else {
+          thresholdTrace = `BLOCK threshold ${decisionTrace} Δ=${advantage.toFixed(1)} min=${effectiveMinAdvantage.toFixed(1)} breakeven=${breakEvenSec.toFixed(2)}s`;
+        }
+      }
+
+      if (!wantShift) {
+        const contextualDownshift = this.evaluateContextualDownshift(car, frame, gear, wheelRadS, effectiveCeiling);
+        if (contextualDownshift) {
+          wantShift = "down";
+          targetGear = contextualDownshift.targetGear;
+          criticalShift = contextualDownshift.critical;
+          reason = contextualDownshift.reason;
+          decisionTrace = decisionTrace ? `${decisionTrace} ${contextualDownshift.trace}` : contextualDownshift.trace;
+        }
+      }
+
+      if (!wantShift && rpm < idle_rpm * 1.5 && gear > 1 && speed_kmh > 15) {
+        wantShift = "down";
+        const rescue = this.getSafeDownshiftCandidates(car, gear, wheelRadS, effectiveCeiling, max_rpm);
+        const deepest = [...rescue.keys()].sort((a, b) => a - b)[0];
+        targetGear = deepest ?? gear - 1;
+        criticalShift = rpm < idle_rpm * 1.25;
+        reason = `low-RPM rescue: g${gear}->g${targetGear} RPM ${rpm} < ${(idle_rpm * 1.5).toFixed(0)}`;
+      }
+    } else {
+      const upRpm = max_rpm * this.config.fallbackUpshiftFraction;
+      const brakeRatio = brake / 255;
+      const speedBandDownRpm = max_rpm * Math.max(this.config.fallbackDownshiftFraction, 0.46);
+
+      if (rpm >= upRpm && gear < highestLearnedGear) {
+        wantShift = "up";
+        targetGear = gear + 1;
+        criticalShift = rpm >= max_rpm * 0.96;
+        reason = `redline RPM ${rpm}>=${upRpm.toFixed(0)} (${gear}→${gear + 1}) [learning: ${this.getDataProgress(car, gear)}]`;
+      } else if (rpm <= speedBandDownRpm && gear > 1 && speed_kmh > 10) {
+        wantShift = "down";
+        targetGear = gear - 1;
+        criticalShift = rpm < idle_rpm * 1.45 || brakeRatio >= this.config.downshiftPrepBrake;
+        reason = `speed-band RPM ${rpm}<=${speedBandDownRpm.toFixed(0)} (${gear}→${gear - 1}) [learning]`;
+      }
+    }
+
+    return {
+      wantShift,
+      targetGear,
+      reason,
+      decisionTrace,
+      shiftAdvantage,
+      breakEvenSec,
+      effectiveMinAdvantage,
+      criticalShift,
+      holdReason: comparison ? "hold (best gear)" : "hold (learning)",
+      thresholdTrace,
+    };
+  }
+
+  private makeStableBaselineFrame(car: CarProfile, gear: number, rpm: number): { frame: TelemetryFrame; wheelRadS: number } | null {
+    const ratio = this.getGearRatio(car, gear);
+    const speedKmh = this.rpmToSpeedKmh(car, gear, rpm);
+    if (!ratio || speedKmh == null) return null;
+    const engineRadS = rpm * 2 * Math.PI / 60;
+    const wheelRadS = engineRadS / ratio;
+    return {
+      wheelRadS,
+      frame: {
+        rpm,
+        max_rpm: car.maxRpm,
+        idle_rpm: car.idleRpm,
+        gear,
+        power_hp: this.lookupPower(car, rpm) ?? 0,
+        torque_nm: 0,
+        speed_kmh: speedKmh,
+        accel: Math.round(0.70 * 255),
+        brake: 0,
+        clutch: 0,
+        g_lat: 0,
+        g_lon: 0,
+        tire_slip: [0, 0, 0, 0],
+        steer: 0,
+        car_ordinal: car.ordinal,
+        car_class: "",
+        car_pi: 0,
+        drivetrain: "AWD",
+        susp_travel: [0.5, 0.5, 0.5, 0.5],
+        wheel_speed: [wheelRadS, wheelRadS, wheelRadS, wheelRadS],
+        rumble_strip: [0, 0, 0, 0],
+        puddle_depth: [0, 0, 0, 0],
+      },
+    };
+  }
+
+  private computeDecisionScanBand(car: CarProfile, gear: number): {
+    leftRpm: number | null;
+    rightRpm: number | null;
+    leftReason: string | null;
+    rightReason: string | null;
+    source: "decision-scan";
+    context: "stable-baseline";
+    stepRpm: number;
+    unavailableReason?: string;
+  } {
+    const stepRpm = Math.max(this.config.rpmBinSize, 25);
+    if (!this.getGearRatio(car, gear)) {
+      return { leftRpm: null, rightRpm: null, leftReason: null, rightReason: null, source: "decision-scan", context: "stable-baseline", stepRpm, unavailableReason: "missing-ratio" };
+    }
+    if (!this.getWheelRadiusM(car)) {
+      return { leftRpm: null, rightRpm: null, leftReason: null, rightReason: null, source: "decision-scan", context: "stable-baseline", stepRpm, unavailableReason: "missing-wheel-radius" };
+    }
+
+    const highestLearnedGear = this.getHighestLearnedForwardGear(car);
+    const ceiling = this.getUsablePowerCeiling(car, car.maxRpm).rpm;
+    const start = Math.max(300, Math.floor(car.idleRpm / stepRpm) * stepRpm);
+    const end = Math.max(start, Math.ceil(ceiling / stepRpm) * stepRpm);
+    let inHold = false;
+    let leftRpm: number | null = null;
+    let rightRpm: number | null = null;
+    let leftReason: string | null = null;
+    let rightReason: string | null = null;
+
+    for (let rpm = start; rpm <= end; rpm += stepRpm) {
+      const synthetic = this.makeStableBaselineFrame(car, gear, rpm);
+      if (!synthetic) continue;
+      const decision = this.evaluateShiftDecision(car, synthetic.frame, gear, synthetic.wheelRadS, ceiling, highestLearnedGear, { hysteresisMultiplier: 1 });
+      const holding = decision.wantShift === null || decision.targetGear === gear;
+      if (holding && !inHold) {
+        leftRpm = rpm;
+        leftReason = decision.holdReason;
+        inHold = true;
+      }
+      if (inHold && !holding) {
+        rightRpm = Math.max(leftRpm ?? start, rpm - stepRpm);
+        rightReason = decision.reason;
+        break;
+      }
+      if (inHold) rightRpm = rpm;
+    }
+
+    if (leftRpm == null || rightRpm == null || rightRpm <= leftRpm) {
+      return { leftRpm, rightRpm, leftReason, rightReason, source: "decision-scan", context: "stable-baseline", stepRpm, unavailableReason: "no-hold-band" };
+    }
+    return { leftRpm, rightRpm, leftReason, rightReason, source: "decision-scan", context: "stable-baseline", stepRpm };
+  }
+
   // --- Main update ---
 
   async update(frame: TelemetryFrame): Promise<{ action: string | null; reason: string }> {
@@ -1414,98 +1626,21 @@ export class AdaptiveAutoShift {
     //   A) Have power curves + ratios for current & adjacent gears → power comparison
     //   B) Incomplete data → redline shifting (upshift near max RPM, downshift at low RPM)
 
-    // Check if we have enough data for power-curve mode
-    const hasCurrentGearData = this.isGearDataComplete(car, gear);
-    const hasAdjacentData = (gear >= highestLearnedGear || this.isGearDataComplete(car, gear + 1))
-      && (gear <= 1 || this.isGearDataComplete(car, gear - 1));
-    const usePowerCurve = hasCurrentGearData && hasAdjacentData && wheelRadS > 1;
-
-    const comparison = usePowerCurve
-      ? this.comparePowerAcrossGears(car, gear, wheelRadS, effectiveCeiling)
-      : null;
-
-    let wantShift: "up" | "down" | null = null;
-    let reason = "";
-    let decisionTrace = "";
-    let shiftAdvantage = 0;
-    let breakEvenSec = Infinity;
-    let effectiveMinAdvantage = this.config.minPowerAdvantageHp;
-    let criticalShift = false;
-    let targetGear = gear;
-
-    if (comparison) {
-      // ---- MODE A: Power-curve comparison ----
-      const { bestGear, currentPower, powers, slopeInfo, powerTrace } = comparison;
-      decisionTrace = `mode=power gear=${gear} best=${bestGear} ${powerTrace}`;
-
-      if (bestGear !== gear) {
-        const target = powers.get(bestGear)!;
-        const advantage = target.power - currentPower;
-        shiftAdvantage = advantage;
-
-        const shiftTimeSec = this.getShiftPenaltyMs(car) / 1000;
-        const energyLostDuringShift = currentPower * shiftTimeSec;
-        breakEvenSec = advantage > 0 ? energyLostDuringShift / advantage : Infinity;
-
-        const hystMult = this.getHysteresisMultiplier();
-        const direction = bestGear > gear ? "up" : "down";
-        const directionMult = direction === "down" ? this.config.downshiftAdvantageMultiplier : 1;
-        effectiveMinAdvantage = this.config.minPowerAdvantageHp * hystMult * directionMult;
-
-        if (advantage >= effectiveMinAdvantage && breakEvenSec < 2.0) {
-          wantShift = direction;
-          targetGear = bestGear;
-          const hystTag = hystMult > 1 ? ` hyst×${hystMult.toFixed(1)}` : "";
-          const downTag = directionMult > 1 ? ` down×${directionMult.toFixed(1)}` : "";
-          const slopeTag = slopeInfo ? ` [${slopeInfo}]` : "";
-          reason = `power: g${gear}=${currentPower.toFixed(0)}hp @${powers.get(gear)!.rpm.toFixed(0)}rpm → g${bestGear}=${target.power.toFixed(0)}hp @${target.rpm.toFixed(0)}rpm (Δ=${advantage.toFixed(0)}hp, min=${effectiveMinAdvantage.toFixed(0)}hp, breakeven=${breakEvenSec.toFixed(1)}s${hystTag}${downTag})${slopeTag}`;
-        } else {
-          this.traceDecision(`BLOCK threshold ${decisionTrace} Δ=${advantage.toFixed(1)} min=${effectiveMinAdvantage.toFixed(1)} breakeven=${breakEvenSec.toFixed(2)}s`);
-        }
-      }
-
-      // Force downshift if RPM is very low
-      if (!wantShift) {
-        const contextualDownshift = this.evaluateContextualDownshift(car, frame, gear, wheelRadS, effectiveCeiling);
-        if (contextualDownshift) {
-          wantShift = "down";
-          targetGear = contextualDownshift.targetGear;
-          criticalShift = contextualDownshift.critical;
-          reason = contextualDownshift.reason;
-          decisionTrace = decisionTrace ? `${decisionTrace} ${contextualDownshift.trace}` : contextualDownshift.trace;
-        }
-      }
-
-      if (!wantShift && rpm < idle_rpm * 1.5 && gear > 1 && speed_kmh > 15) {
-        wantShift = "down";
-        const rescue = this.getSafeDownshiftCandidates(car, gear, wheelRadS, effectiveCeiling, max_rpm);
-        const deepest = [...rescue.keys()].sort((a, b) => a - b)[0];
-        targetGear = deepest ?? gear - 1;
-        criticalShift = rpm < idle_rpm * 1.25;
-        reason = `low-RPM rescue: g${gear}->g${targetGear} RPM ${rpm} < ${(idle_rpm * 1.5).toFixed(0)}`;
-      }
-    } else {
-      // ---- MODE B: Redline shifting (data incomplete) ----
-      // Simple but reliable: upshift near redline, downshift at low RPM
-      const upRpm = max_rpm * this.config.fallbackUpshiftFraction;
-      const brakeRatio = brake / 255;
-      const speedBandDownRpm = max_rpm * Math.max(this.config.fallbackDownshiftFraction, 0.46);
-
-      if (rpm >= upRpm && gear < highestLearnedGear) {
-        wantShift = "up";
-        targetGear = gear + 1;
-        criticalShift = rpm >= max_rpm * 0.96;
-        reason = `redline RPM ${rpm}>=${upRpm.toFixed(0)} (${gear}→${gear + 1}) [learning: ${this.getDataProgress(car, gear)}]`;
-      } else if (rpm <= speedBandDownRpm && gear > 1 && speed_kmh > 10) {
-        wantShift = "down";
-        targetGear = gear - 1;
-        criticalShift = rpm < idle_rpm * 1.45 || brakeRatio >= this.config.downshiftPrepBrake;
-        reason = `speed-band RPM ${rpm}<=${speedBandDownRpm.toFixed(0)} (${gear}→${gear - 1}) [learning]`;
-      }
-    }
+    const decision = this.evaluateShiftDecision(car, frame, gear, wheelRadS, effectiveCeiling, highestLearnedGear);
+    const {
+      wantShift,
+      targetGear,
+      reason,
+      decisionTrace,
+      shiftAdvantage,
+      breakEvenSec,
+      effectiveMinAdvantage,
+      criticalShift,
+    } = decision;
 
     if (!wantShift) {
-      if (comparison && decisionTrace) {
+      if (decision.thresholdTrace) this.traceDecision(decision.thresholdTrace);
+      if (decisionTrace) {
         this.traceDecision(`HOLD ${decisionTrace}`);
       }
       // Periodic debug
@@ -1516,7 +1651,7 @@ export class AdaptiveAutoShift {
           .join(" ");
         console.log(`  [pwr] curve:${car.powerByRpm.size}bins peak:${car.peakPower.toFixed(0)}hp@${car.peakPowerRpm} | ratios: ${ratioGears}`);
       }
-      return { action: null, reason: comparison ? "hold (best gear)" : "hold (learning)" };
+      return { action: null, reason: decision.holdReason };
     }
 
     // ========== GUARDS ==========
@@ -1683,34 +1818,18 @@ export class AdaptiveAutoShift {
       for (const [g, p] of car.gears) {
         if (g < 1 || g > this.config.maxGear) continue;
         const avgRatio = p.ratioCount > 10 ? p.ratioSum / p.ratioCount : null;
-        const hasNextRatio = g < this.config.maxGear && this.getGearRatio(car, g + 1) != null;
-        const upshiftRpm = hasNextRatio
-          ? this.getUpshiftRpmForSpeedCap(car, g, g + 1, car.maxRpm)
-          : this.getUsablePowerCeiling(car, car.maxRpm).rpm;
-        const downshiftSpeed = this.getDownshiftSpeedForGearKmh(car, g, car.maxRpm);
-        const downshiftRpm = downshiftSpeed != null ? this.speedToRpm(car, g, downshiftSpeed) : null;
-        const prevRatio = g > 1 ? this.getGearRatio(car, g - 1) : null;
-        const currentRatio = this.getGearRatio(car, g);
-        const prevUpshiftRpm = g > 1 ? this.getUpshiftRpmForSpeedCap(car, g - 1, g, car.maxRpm) : null;
-        const entryRpm = g === 1
-          ? car.idleRpm
-          : prevRatio && currentRatio && prevUpshiftRpm
-            ? prevUpshiftRpm * currentRatio / prevRatio
-            : null;
-        const usableCeiling = this.getUsablePowerCeiling(car, car.maxRpm).rpm;
-        const displayLeftRpm = entryRpm ?? downshiftRpm ?? car.idleRpm;
-        const rawRightRpm = upshiftRpm ?? usableCeiling;
-        const displayRightRpm = rawRightRpm > displayLeftRpm + this.config.rpmBinSize
-          ? rawRightRpm
-          : usableCeiling;
+        const band = this.computeDecisionScanBand(car, g);
         gears[g] = {
           ratio: avgRatio ? +avgRatio.toFixed(3) : null,
           ratioSamples: p.ratioCount,
-          downshiftRpm: downshiftRpm != null ? +downshiftRpm.toFixed(0) : null,
-          entryRpm: entryRpm != null ? +entryRpm.toFixed(0) : null,
-          upshiftRpm: upshiftRpm != null ? +upshiftRpm.toFixed(0) : null,
-          displayLeftRpm: +displayLeftRpm.toFixed(0),
-          displayRightRpm: +displayRightRpm.toFixed(0),
+          leftRpm: band.leftRpm != null ? +band.leftRpm.toFixed(0) : null,
+          rightRpm: band.rightRpm != null ? +band.rightRpm.toFixed(0) : null,
+          source: band.source,
+          context: band.context,
+          stepRpm: band.stepRpm,
+          leftReason: band.leftReason,
+          rightReason: band.rightReason,
+          unavailableReason: band.unavailableReason ?? null,
         };
       }
     }

@@ -380,14 +380,16 @@ function Draw-Overlay($state) {
       $gearNum = 0
       if ([int]::TryParse([string]$prop.Name, [ref]$gearNum) -and $gearNum -ge 1 -and $gearNum -le 10) {
         $info = $prop.Value
-        if ($info -and $null -ne $info.upshiftRpm) {
-          $leftRpm = if ($null -ne $info.displayLeftRpm) { [double]$info.displayLeftRpm } elseif ($null -ne $info.entryRpm) { [double]$info.entryRpm } elseif ($gearNum -eq 1) { [double]$minRpm } else { [double]$minRpm }
-          $rightRpm = if ($null -ne $info.displayRightRpm) { [double]$info.displayRightRpm } else { [double]$info.upshiftRpm }
+        if ($info -and $null -ne $info.leftRpm -and $null -ne $info.rightRpm) {
+          $leftRpm = [double]$info.leftRpm
+          $rightRpm = [double]$info.rightRpm
           if ($rightRpm -gt $leftRpm) {
-            $gearRows += [pscustomobject]@{ gear = $gearNum; left = $leftRpm; right = $rightRpm; rawLeft = $info.entryRpm; rawRight = $info.upshiftRpm }
+            $gearRows += [pscustomobject]@{ gear = $gearNum; left = $leftRpm; right = $rightRpm; source = $info.source; context = $info.context }
           } else {
             $gearSkip += ("G{0}:{1:n0}>{2:n0}" -f $gearNum, $leftRpm, $rightRpm)
           }
+        } elseif ($info -and $null -ne $info.unavailableReason) {
+          $gearSkip += ("G{0}:{1}" -f $gearNum, $info.unavailableReason)
         }
       }
     }
