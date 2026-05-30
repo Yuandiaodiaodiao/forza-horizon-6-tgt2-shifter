@@ -15,6 +15,7 @@ export class PowerCurvePipeline {
   private stopped = false;
   private lastVersion = -1;
   private cached: PowerCurveSnapshot | null = null;
+  private readonly resetVersions = new Map<number, number>();
 
   constructor(dataPath: string, seeds: PowerCurveSeed[], worker?: Worker) {
     this.worker = worker ?? new Worker(new URL("./power_curve_worker.ts", import.meta.url).href);
@@ -31,6 +32,13 @@ export class PowerCurvePipeline {
     if (sample) this.worker.postMessage({ type: "sample", frame: sample } satisfies PowerCurveWorkerMessage);
   }
 
+  resetCar(carKey: number) {
+    if (this.stopped || !Number.isFinite(carKey) || carKey <= 0) return;
+    this.resetVersions.set(carKey, Atomics.load(this.header, 0));
+    this.cached = { revision: Atomics.load(this.header, 0), updatedAt: Date.now(), car: null };
+    this.worker.postMessage({ type: "reset-car", carKey } satisfies PowerCurveWorkerMessage);
+  }
+
   readLatest(): PowerCurveSnapshot | null {
     for (let attempt = 0; attempt < 2; attempt++) {
       const version = Atomics.load(this.header, 0);
@@ -44,7 +52,14 @@ export class PowerCurvePipeline {
       const json = this.decoder.decode(this.bytes.slice(start, start + length));
       if (version !== Atomics.load(this.header, 0)) continue;
       try {
-        this.cached = JSON.parse(json) as PowerCurveSnapshot;
+        const parsed = JSON.parse(json) as PowerCurveSnapshot;
+        const resetVersion = parsed.car ? this.resetVersions.get(parsed.car.carKey) : undefined;
+        this.cached = resetVersion !== undefined && version <= resetVersion
+          ? { revision: version, updatedAt: Date.now(), car: null }
+          : parsed;
+        if (parsed.car && resetVersion !== undefined && version > resetVersion) {
+          this.resetVersions.delete(parsed.car.carKey);
+        }
         this.lastVersion = version;
       } catch {
         return this.cached;

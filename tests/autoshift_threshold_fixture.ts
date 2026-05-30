@@ -128,6 +128,44 @@ if (gear2) {
   gear2.ratioSum = originalRatioSum;
 }
 
+{
+  const originalFuelCutRpm = car.fuelCutRpm;
+  const originalFuelCutConfidence = car.fuelCutConfidence;
+  car.fuelCutRpm = Math.round(car.peakPowerRpm + 200);
+  car.fuelCutConfidence = 1;
+  const refuteRpm = autoShift.getStrongPowerRpmAbove(car, car.fuelCutRpm);
+  const ceiling = autoShift.getUsablePowerCeiling(car, car.maxRpm);
+  if (refuteRpm === null || Math.round(ceiling.rpm) !== car.fuelCutRpm - autoShift.config.rpmBinSize) {
+    console.error(`Confirmed fuel cut should take priority over strong-power refute, refute=${refuteRpm} ceiling=${ceiling.rpm} fuelCut=${car.fuelCutRpm}`);
+    process.exit(1);
+  }
+  car.fuelCutRpm = originalFuelCutRpm;
+  car.fuelCutConfidence = originalFuelCutConfidence;
+}
+
+{
+  const pulseCar = autoShift.createEmptyCarProfile(123456789, 8000, 1000);
+  pulseCar.peakPower = 470;
+  pulseCar.peakPowerRpm = 7150;
+  const pulseFrames = [
+    [6920, 458],
+    [7105, 461],
+    [7266, 461],
+    [6874, -374],
+    [6738, -327],
+    [6958, 459],
+    [7145, 461],
+    [7196, -491],
+  ];
+  for (const [rpm, power] of pulseFrames) {
+    autoShift.detectFuelCut(pulseCar, rpm, power, 1);
+  }
+  if (!pulseCar.fuelCutRpm || pulseCar.fuelCutConfidence <= 0) {
+    console.error("Negative-power limiter pulse should learn fuel-cut RPM");
+    process.exit(1);
+  }
+}
+
 const gear4 = car.gears.get(4);
 const gear5 = car.gears.get(5);
 const gear6 = car.gears.get(6);

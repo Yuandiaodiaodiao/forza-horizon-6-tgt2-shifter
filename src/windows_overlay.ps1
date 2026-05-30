@@ -90,9 +90,25 @@ function Write-OverlayLog($message) {
 
 Write-OverlayLog "start wsUrl=$WsUrl refreshMs=$RefreshMs"
 
+$httpBaseUrl = $WsUrl
+if ($httpBaseUrl.StartsWith("ws://")) {
+  $httpBaseUrl = "http://" + $httpBaseUrl.Substring(5)
+} elseif ($httpBaseUrl.StartsWith("wss://")) {
+  $httpBaseUrl = "https://" + $httpBaseUrl.Substring(6)
+}
+$httpBaseUrl = $httpBaseUrl.TrimEnd("/")
+if ($httpBaseUrl.EndsWith("/overlay")) {
+  $httpBaseUrl = $httpBaseUrl.Substring(0, $httpBaseUrl.Length - 8)
+}
+$resetUrl = "$httpBaseUrl/autoshift/reset-current"
+$resetStatus = ""
+$script:resetUrl = $resetUrl
+$script:resetStatus = $resetStatus
+
 $window = New-Object Windows.Window
+$script:window = $window
 $window.Title = "TGT2 Overlay"
-$window.Width = 460
+$window.Width = 500
 $window.Height = 260
 $window.Topmost = $true
 $window.ResizeMode = "CanResizeWithGrip"
@@ -114,6 +130,7 @@ $top.Margin = "10,8,8,6"
 $top.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = "*" }))
 $top.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = "118" }))
 $top.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = "34" }))
+$top.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = "58" }))
 $top.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = "28" }))
 
 $title = New-Object Windows.Controls.TextBlock
@@ -149,6 +166,21 @@ $opacityValue.TextAlignment = "Right"
 [Windows.Controls.Grid]::SetColumn($opacityValue, 2)
 $top.Children.Add($opacityValue) | Out-Null
 
+$resetButton = New-Object Windows.Controls.Button
+$script:resetButton = $resetButton
+$resetButton.Content = "RESET"
+$resetButton.FontFamily = "Segoe UI"
+$resetButton.FontSize = 10
+$resetButton.Foreground = [Windows.Media.Brushes]::White
+$resetButton.Background = New-Object Windows.Media.SolidColorBrush ([Windows.Media.Color]::FromRgb(33,38,45))
+$resetButton.BorderBrush = New-Object Windows.Media.SolidColorBrush ([Windows.Media.Color]::FromRgb(139,148,158))
+$resetButton.BorderThickness = "1"
+$resetButton.Cursor = [Windows.Input.Cursors]::Hand
+$resetButton.ToolTip = "Reset learned shift data"
+$resetButton.Margin = "6,0,6,0"
+[Windows.Controls.Grid]::SetColumn($resetButton, 3)
+$top.Children.Add($resetButton) | Out-Null
+
 $closeButton = New-Object Windows.Controls.Button
 $closeButton.Content = [char]0x00D7
 $closeButton.FontFamily = "Segoe UI"
@@ -158,9 +190,41 @@ $closeButton.Background = [Windows.Media.Brushes]::Transparent
 $closeButton.BorderThickness = "0"
 $closeButton.Cursor = [Windows.Input.Cursors]::Hand
 $closeButton.ToolTip = "Close overlay"
-[Windows.Controls.Grid]::SetColumn($closeButton, 3)
+[Windows.Controls.Grid]::SetColumn($closeButton, 4)
 $top.Children.Add($closeButton) | Out-Null
 $closeButton.Add_Click({ $window.Close() })
+
+$resetButton.Add_Click({
+  if (-not $script:resetButton.IsEnabled) { return }
+  $script:resetButton.IsEnabled = $false
+  $script:resetButton.Content = "..."
+  $script:resetStatus = "resetting"
+  Write-OverlayLog "reset current car requested"
+  [System.Threading.Tasks.Task]::Run([Action]{
+    $ok = $false
+    $message = ""
+    try {
+      $client = New-Object System.Net.Http.HttpClient
+      $client.Timeout = [TimeSpan]::FromSeconds(3)
+      $response = $client.PostAsync($script:resetUrl, [System.Net.Http.HttpContent]$null).GetAwaiter().GetResult()
+      $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+      $ok = $response.IsSuccessStatusCode
+      $message = "status=$([int]$response.StatusCode) body=$body"
+      $client.Dispose()
+    } catch {
+      $message = $_.Exception.Message
+    }
+    $script:window.Dispatcher.Invoke([Action]{
+      $script:resetButton.IsEnabled = $true
+      $script:resetButton.Content = "RESET"
+      $script:resetStatus = if ($ok) { "reset ok" } else { "reset failed" }
+      $script:lastChartKey = ""
+      $script:lastGearOverlayKey = ""
+      $script:renderPending = $true
+      Write-OverlayLog ("reset current car result ok={0} {1}" -f $ok, $message)
+    })
+  }) | Out-Null
+})
 
 $opacitySlider.Add_ValueChanged({
   $value = [Math]::Max(0.08, [Math]::Min(0.98, $opacitySlider.Value))
@@ -326,12 +390,18 @@ function Draw-Overlay($state) {
   if ($curve.Count -lt 3) {
     if ($redrawModel) {
       $canvas.Children.Clear()
+      $learningStatus = if ($state.autoshift -and $state.autoshift.learningStatus) { [string]$state.autoshift.learningStatus } else { "learning" }
+      $statusText = if ($learningStatus -eq "complete") { "LEARNED" } else { "LEARNING / FALLBACK" }
+      $statusColor = if ($learningStatus -eq "complete") { $green } else { $yellow }
+      Add-Text $statusText ($padL + 4) ($padT + 4) 12 $statusColor
       Add-Text "Learning curve..." ($w / 2 - 54) ($h / 2 - 10) 14 $dim
       $script:lastChartKey = $chartKey
+      $script:lastGearOverlayKey = "learning-empty:$($state.modelTs):$learningStatus"
     }
     $rpm = if ($tel) { [int]$tel.rpm } else { 0 }
     $speed = if ($tel) { [double]$tel.speedKmh } else { 0 }
-    $footer.Text = ("G{0}  {1} RPM  {2:n0} km/h  samples {3}" -f $(if($tel){$tel.gear}else{"-"}), $rpm, $speed, $(if($car){$car.totalSamples}else{0}))
+    $resetSuffix = if ($script:resetStatus) { "  $script:resetStatus" } else { "" }
+    $footer.Text = ("G{0}  {1} RPM  {2:n0} km/h  samples {3}{4}" -f $(if($tel){$tel.gear}else{"-"}), $rpm, $speed, $(if($car){$car.totalSamples}else{0}), $resetSuffix)
     return
   }
 
@@ -479,7 +549,8 @@ function Draw-Overlay($state) {
 
     Add-LiveText ("{0:n0} HP" -f $curveHp) ([Math]::Min($w - 74, $x + 8)) ([Math]::Max(2, $y - 20)) 11 $red
     $as = if ($state.autoshift.enabled) { "AUTO" } else { "MAN" }
-    $footer.Text = ("{0}  G{1}  {2:n0} RPM  {3:n0} km/h  {4:n0} HP  peak {5:n0}@{6}" -f $as, $tel.gear, $tel.rpm, $tel.speedKmh, $curveHp, $car.peakHp, $car.peakHpRpm)
+    $resetSuffix = if ($script:resetStatus) { "  $script:resetStatus" } else { "" }
+    $footer.Text = ("{0}  G{1}  {2:n0} RPM  {3:n0} km/h  {4:n0} HP  peak {5:n0}@{6}{7}" -f $as, $tel.gear, $tel.rpm, $tel.speedKmh, $curveHp, $car.peakHp, $car.peakHpRpm, $resetSuffix)
   }
 }
 

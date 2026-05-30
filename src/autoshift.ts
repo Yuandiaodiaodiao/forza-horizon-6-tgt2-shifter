@@ -11,7 +11,7 @@
  * No neural network needed — this is a direct physics computation.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { APP_DATA_DIR, loadConfig } from "./config";
 import { buildKeyAgentUrl } from "./env";
@@ -420,6 +420,28 @@ export class AdaptiveAutoShift {
     };
   }
 
+  private createEmptyCarProfile(ordinal: number, maxRpm: number, idleRpm: number): CarProfile {
+    return {
+      ordinal,
+      maxRpm,
+      idleRpm,
+      powerByRpm: new Map(),
+      peakPower: 0,
+      peakPowerRpm: 0,
+      maxObservedRpm: 0,
+      fuelCutRpm: 0,
+      fuelCutConfidence: 0,
+      gears: new Map(),
+      wheelRadiusSum: 0,
+      wheelRadiusCount: 0,
+      totalSamples: 0,
+      totalShifts: 0,
+      discoveredTopGear: 0,
+      shiftTiming: this.defaultShiftTiming(),
+      firstSeen: Date.now(),
+    };
+  }
+
   private normalizeShiftTiming(raw: any): ShiftTimingProfile {
     const base = this.defaultShiftTiming();
     if (!raw || typeof raw !== "object") return base;
@@ -502,25 +524,7 @@ export class AdaptiveAutoShift {
 
   private getOrCreateCar(ordinal: number, maxRpm: number, idleRpm: number): CarProfile {
     if (!this.carProfiles.has(ordinal)) {
-      this.carProfiles.set(ordinal, {
-        ordinal,
-        maxRpm,
-        idleRpm,
-        powerByRpm: new Map(),
-        peakPower: 0,
-        peakPowerRpm: 0,
-        maxObservedRpm: 0,
-        fuelCutRpm: 0,
-        fuelCutConfidence: 0,
-        gears: new Map(),
-        wheelRadiusSum: 0,
-        wheelRadiusCount: 0,
-        totalSamples: 0,
-        totalShifts: 0,
-        discoveredTopGear: 0,
-        shiftTiming: this.defaultShiftTiming(),
-        firstSeen: Date.now(),
-      });
+      this.carProfiles.set(ordinal, this.createEmptyCarProfile(ordinal, maxRpm, idleRpm));
       this.log(`NEW CAR detected: ordinal=${ordinal} maxRPM=${maxRpm} idle=${idleRpm}`);
     }
     const car = this.carProfiles.get(ordinal)!;
@@ -636,8 +640,9 @@ export class AdaptiveAutoShift {
       && plateau
       && smoothedPowerDrop;
     const hardZero = powerNow <= 5 && recent.some(s => s.power > 50);
+    const limiterPulse = recent.filter(s => s.power <= 0).length >= 2 && recent.some(s => s.power > 50);
 
-    if (nearTop && (hardZero || (plateau && smoothedPowerDrop) || postPeakPlateau)) {
+    if (nearTop && (hardZero || limiterPulse || (plateau && smoothedPowerDrop) || postPeakPlateau)) {
       const cutRpm = Math.round(maxRecentRpm);
       const refuteRpm = this.getStrongPowerRpmAbove(car, cutRpm);
       if (refuteRpm !== null) {
@@ -653,9 +658,11 @@ export class AdaptiveAutoShift {
       }
       const source = hardZero
         ? "zero-power"
-        : postPeakPlateau
-          ? `post-peak plateau smooth=${smoothedPowerNow?.toFixed(0) ?? "-"} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)} dRpm=${rpmDelta.toFixed(0)} spread=${rpmSpread.toFixed(0)}`
-          : `plateau/drop smooth=${smoothedPowerNow?.toFixed(0) ?? "-"} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)} dRpm=${rpmDelta.toFixed(0)} spread=${rpmSpread.toFixed(0)}`;
+        : limiterPulse
+          ? `negative-power pulse p=${powerNow.toFixed(0)} min=${Math.min(...recent.map(s => s.power)).toFixed(0)} max=${Math.max(...recent.map(s => s.power)).toFixed(0)} throttle=${throttleNow.toFixed(2)} spread=${rpmSpread.toFixed(0)}`
+          : postPeakPlateau
+            ? `post-peak plateau smooth=${smoothedPowerNow?.toFixed(0) ?? "-"} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)} dRpm=${rpmDelta.toFixed(0)} spread=${rpmSpread.toFixed(0)}`
+            : `plateau/drop smooth=${smoothedPowerNow?.toFixed(0) ?? "-"} p=${powerNow.toFixed(0)} peak=${car.peakPower.toFixed(0)} throttle=${throttleNow.toFixed(2)} dRpm=${rpmDelta.toFixed(0)} spread=${rpmSpread.toFixed(0)}`;
       this.updateFuelCut(car, cutRpm, source);
       this.fuelCutSamples = [];
     }
@@ -1158,9 +1165,11 @@ export class AdaptiveAutoShift {
     let source = "maxRpm";
 
     const fuelCutRefuteRpm = car.fuelCutRpm > 0 ? this.getStrongPowerRpmAbove(car, car.fuelCutRpm) : null;
-    if (car.fuelCutRpm > 0 && car.fuelCutConfidence >= 0.3 && fuelCutRefuteRpm === null) {
+    if (car.fuelCutRpm > 0 && car.fuelCutConfidence >= 0.3) {
       ceiling = Math.min(ceiling, car.fuelCutRpm - this.config.rpmBinSize);
-      source = `fuel-cut@${car.fuelCutRpm}`;
+      source = fuelCutRefuteRpm === null
+        ? `fuel-cut@${car.fuelCutRpm}`
+        : `fuel-cut-priority@${car.fuelCutRpm}/strong@${fuelCutRefuteRpm}`;
     } else if (car.fuelCutRpm > 0 && fuelCutRefuteRpm !== null) {
       source = `fuel-cut-refuted@${car.fuelCutRpm}/strong@${fuelCutRefuteRpm}`;
     }
@@ -2088,6 +2097,39 @@ export class AdaptiveAutoShift {
   setEnabled(on: boolean) { this.enabled = on; this.log(on ? "ENABLED" : "DISABLED"); }
   isEnabled() { return this.enabled; }
   setManualCooldownSec(seconds: number) { this.manualPauseMs = Math.max(0, Math.min(120, seconds)) * 1000; }
+
+  resetCurrentCarLearning(): { ok: boolean; carKey: number; message: string } {
+    const carKey = this.currentOrdinal;
+    if (!carKey || !this.currentCar) return { ok: false, carKey: 0, message: "no current car" };
+
+    const previous = this.currentCar;
+    const reset = this.createEmptyCarProfile(carKey, previous.maxRpm, previous.idleRpm);
+    this.carProfiles.set(carKey, reset);
+    this.currentCar = reset;
+    this.curveLookupCache.delete(previous);
+    this.lastPowerCurveRevision = 0;
+    this.lastShiftTime = 0;
+    this.lastShiftDirection = null;
+    this.lastShiftFromGear = 0;
+    this.lastShiftToGear = 0;
+    this.nextCeilingUpshiftAt = 0;
+    this.nextFallbackDiscoveryUpshiftAt = 0;
+    this.blockUpshiftUntil = 0;
+    this.blockDownshiftUntil = 0;
+    this.pendingShiftTiming = null;
+    this.shiftExecutionLocked = false;
+    this.fuelCutSamples = [];
+    this.dirty = false;
+    try {
+      const path = join(DATA_DIR, `${carKey}.json`);
+      if (existsSync(path)) unlinkSync(path);
+    } catch (error) {
+      this.log(`RESET current car ${carKey}: failed to delete persisted profile: ${String(error)}`);
+    }
+    this.log(`RESET current car ${carKey}: cleared learned shift model`);
+    this.traceDecision(`RESET current car ${carKey}: cleared learned shift model`, true);
+    return { ok: true, carKey, message: "reset current car learning" };
+  }
 
   getPowerCurveSeeds(): PowerCurveSeed[] {
     return [...this.carProfiles.entries()].map(([carKey, car]) => ({

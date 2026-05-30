@@ -62,7 +62,12 @@ export interface PowerCurveWorkerStop {
   type: "stop";
 }
 
-export type PowerCurveWorkerMessage = PowerCurveWorkerInit | PowerCurveWorkerSample | PowerCurveWorkerStop;
+export interface PowerCurveWorkerResetCar {
+  type: "reset-car";
+  carKey: number;
+}
+
+export type PowerCurveWorkerMessage = PowerCurveWorkerInit | PowerCurveWorkerSample | PowerCurveWorkerStop | PowerCurveWorkerResetCar;
 
 export function telemetryCarKey(frame: Record<string, any>): number {
   const drivetrain = frame.drivetrain === "FWD" ? 1 : frame.drivetrain === "RWD" ? 2 : 3;

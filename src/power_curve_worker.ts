@@ -55,6 +55,10 @@ self.onmessage = (event: MessageEvent<PowerCurveWorkerMessage>) => {
     acceptSample(message.frame);
     return;
   }
+  if (message.type === "reset-car") {
+    resetCar(message.carKey);
+    return;
+  }
   if (message.type === "stop") {
     persist();
     publish();
@@ -108,6 +112,16 @@ function acceptSample(frame: PowerCurveTelemetry) {
   car.updatedAt = Date.now();
   outputDirty = true;
   persistedDirty = true;
+}
+
+function resetCar(carKey: number) {
+  if (!Number.isFinite(carKey) || carKey <= 0) return;
+  cars.delete(carKey);
+  if (activeCarKey === carKey) activeCarKey = 0;
+  outputDirty = true;
+  persistedDirty = true;
+  persist();
+  publish();
 }
 
 function buildCarSnapshot(carKey: number, car: Car): PowerCurveCarSnapshot {

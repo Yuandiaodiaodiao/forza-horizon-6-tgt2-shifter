@@ -127,6 +127,13 @@ const server = Bun.serve<{ channel: "dashboard" | "overlay" }>({
       }
       return Response.json(fixture, { headers: cors });
     }
+    if (path === "/autoshift/reset-current" && req.method === "POST") {
+      const result = autoShift.resetCurrentCarLearning();
+      if (result.ok) powerCurve.resetCar(result.carKey);
+      refreshPowerCurveSnapshot();
+      if (result.ok) broadcastOverlayModel();
+      return Response.json(result, { status: result.ok ? 200 : 409, headers: cors });
+    }
     if (path === "/overlay/state") {
       return Response.json(buildOverlayState(), { headers: cors });
     }
@@ -143,7 +150,7 @@ const server = Bun.serve<{ channel: "dashboard" | "overlay" }>({
       return new Response(`OK:${autoShift.isEnabled() ? "ON" : "OFF"}`, { headers: cors });
     }
 
-    return new Response("T-GT II Server | /dashboard.html | /autoshift/status|on|off|toggle", { status: 200, headers: cors });
+    return new Response("T-GT II Server | /dashboard.html | /autoshift/status|export-fixture|reset-current|on|off|toggle", { status: 200, headers: cors });
   },
   websocket: {
     open(ws) {
