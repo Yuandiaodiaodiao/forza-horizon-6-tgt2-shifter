@@ -339,6 +339,9 @@ async function doShift(direction: "up" | "down") {
     return;
   } else if (method === "E" && vjoyAvailable) {
     const targetGear = direction === "up" ? currentGear + 1 : currentGear - 1;
+    // Never let an automatic down command fall below 1st into Reverse. currentGear
+    // can momentarily be 0 (Neutral/Reverse from telemetry) at a race start.
+    if (targetGear < 1) return;
     if (vjoySetGear(targetGear)) vjoyPulseClutch();
   } else if (method === "F") {
     await pressKeyboardShiftWithClutch(direction === "up" ? "E" : "Q");
@@ -357,12 +360,18 @@ function doGear(gear: number) {
 async function sequentialShiftToGear(targetGear: number) {
   if (targetGear < 1 || targetGear > 10) return false;
   if (currentGear < 1 || currentGear > 10) {
-    const key = targetGear > 1 ? "E" : "Q";
+    // Unknown / Neutral / Reverse state (e.g. at a race start the game reports gear 0).
+    // We do NOT know how many sequential steps reach the target, and pressing the
+    // downshift key from Neutral/1st drops the car into Reverse. Only ever upshift
+    // here so the car can never be auto-selected into R. Assume we land in 1st after
+    // one upshift from Neutral; telemetry will correct currentGear on the next frame.
+    const key = "E";
     if (method === "F") {
       await pressKeyboardShiftWithClutch(key);
     } else {
       await pressKey(key);
     }
+    currentGear = 1;
     return true;
   }
   const diff = targetGear - currentGear;
@@ -425,6 +434,18 @@ const server = Bun.serve({
           return R(`OK:HOLD:${g}:VJOY`);
         }
         if (await sequentialShiftToGear(g)) return R(`OK:HOLD:${g}:KEYBOARD`);
+      }
+    }
+
+    // /gear/sync/N — set internal currentGear WITHOUT pressing any keys.
+    // Used at race start: FH6 always starts every race already in 1st with the
+    // clutch engaged, so we only need to align our internal state, NOT shift.
+    // Pressing keys here would fight the game's already-correct gear.
+    if (cmd.startsWith("GEAR/SYNC/")) {
+      const g = parseInt(cmd.split("/")[2]);
+      if (!isNaN(g) && g >= -1 && g <= 10) {
+        currentGear = g;
+        return R(`OK:SYNC:${g}`);
       }
     }
 

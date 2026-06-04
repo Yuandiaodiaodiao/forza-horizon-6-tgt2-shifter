@@ -100,6 +100,7 @@ $httpBaseUrl = $httpBaseUrl.TrimEnd("/")
 if ($httpBaseUrl.EndsWith("/overlay")) {
   $httpBaseUrl = $httpBaseUrl.Substring(0, $httpBaseUrl.Length - 8)
 }
+$script:httpBaseUrl = $httpBaseUrl
 $resetUrl = "$httpBaseUrl/autoshift/reset-current"
 $resetStatus = ""
 $script:resetUrl = $resetUrl
@@ -109,7 +110,7 @@ $window = New-Object Windows.Window
 $script:window = $window
 $window.Title = "TGT2 Overlay"
 $window.Width = 500
-$window.Height = 260
+$window.Height = 340
 $window.Topmost = $true
 $window.ResizeMode = "CanResizeWithGrip"
 $window.WindowStyle = "None"
@@ -123,6 +124,8 @@ $panelBrush = New-Object Windows.Media.SolidColorBrush ([Windows.Media.Color]::F
 $root.Background = $panelBrush
 $root.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = "Auto" }))
 $root.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = "*" }))
+$root.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = "Auto" }))
+$root.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = "Auto" }))
 $root.RowDefinitions.Add((New-Object Windows.Controls.RowDefinition -Property @{ Height = "Auto" }))
 
 $top = New-Object Windows.Controls.Grid
@@ -200,30 +203,32 @@ $resetButton.Add_Click({
   $script:resetButton.Content = "..."
   $script:resetStatus = "resetting"
   Write-OverlayLog "reset current car requested"
-  [System.Threading.Tasks.Task]::Run([Action]{
-    $ok = $false
-    $message = ""
-    try {
-      $client = New-Object System.Net.Http.HttpClient
-      $client.Timeout = [TimeSpan]::FromSeconds(3)
-      $response = $client.PostAsync($script:resetUrl, [System.Net.Http.HttpContent]$null).GetAwaiter().GetResult()
-      $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
-      $ok = $response.IsSuccessStatusCode
-      $message = "status=$([int]$response.StatusCode) body=$body"
-      $client.Dispose()
-    } catch {
-      $message = $_.Exception.Message
-    }
-    $script:window.Dispatcher.Invoke([Action]{
-      $script:resetButton.IsEnabled = $true
-      $script:resetButton.Content = "RESET"
-      $script:resetStatus = if ($ok) { "reset ok" } else { "reset failed" }
-      $script:lastChartKey = ""
-      $script:lastGearOverlayKey = ""
-      $script:renderPending = $true
-      Write-OverlayLog ("reset current car result ok={0} {1}" -f $ok, $message)
-    })
-  }) | Out-Null
+  # Do the POST synchronously on the UI thread. The previous version used
+  # [Task]::Run, but a PowerShell scriptblock invoked as a plain [Action] on a
+  # thread-pool thread has no runspace, so the request was never actually sent
+  # (no result was ever logged) and the button stayed greyed out. The /shutdown
+  # handler proved a synchronous in-event HTTP call works reliably; reset is a
+  # rare manual action, so a brief (<=3s) UI pause here is acceptable.
+  $ok = $false
+  $message = ""
+  try {
+    $client = New-Object System.Net.Http.HttpClient
+    $client.Timeout = [TimeSpan]::FromSeconds(3)
+    $response = $client.PostAsync($script:resetUrl, [System.Net.Http.HttpContent]$null).GetAwaiter().GetResult()
+    $body = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    $ok = $response.IsSuccessStatusCode
+    $message = "status=$([int]$response.StatusCode) body=$body"
+    $client.Dispose()
+  } catch {
+    $message = $_.Exception.Message
+  }
+  $script:resetButton.IsEnabled = $true
+  $script:resetButton.Content = "RESET"
+  $script:resetStatus = if ($ok) { "reset ok" } else { "reset failed" }
+  $script:lastChartKey = ""
+  $script:lastGearOverlayKey = ""
+  $script:renderPending = $true
+  Write-OverlayLog ("reset current car result ok={0} {1}" -f $ok, $message)
 })
 
 $opacitySlider.Add_ValueChanged({
@@ -259,6 +264,136 @@ $footer.Margin = "10,6,10,8"
 $footer.Text = "Waiting for telemetry..."
 [Windows.Controls.Grid]::SetRow($footer, 2)
 $root.Children.Add($footer) | Out-Null
+
+# --- Build slot UI (row 3 = buttons, row 4 = indicators) ---
+$script:BUILD_SLOTS = @("default","road","dirt","cc","drag","drift")
+function New-Brush([int]$r,[int]$g,[int]$b) { New-Object Windows.Media.SolidColorBrush ([Windows.Media.Color]::FromRgb($r,$g,$b)) }
+
+$slotGrid = New-Object System.Windows.Controls.Primitives.UniformGrid
+$slotGrid.Columns = 6
+$slotGrid.Margin = "10,4,10,4"
+[Windows.Controls.Grid]::SetRow($slotGrid, 3)
+$script:slotButtons = @{}
+foreach ($slot in $script:BUILD_SLOTS) {
+  $b = New-Object Windows.Controls.Button
+  $b.Content = $slot.ToUpper()
+  $b.Tag = $slot
+  $b.FontFamily = "Consolas"
+  $b.FontSize = 11
+  $b.Margin = "3,0,3,0"
+  $b.Padding = "0,5,0,5"
+  $b.Cursor = [Windows.Input.Cursors]::Hand
+  $b.Foreground = (New-Brush 125 133 144)
+  $b.Background = (New-Brush 22 27 34)
+  $b.BorderBrush = (New-Brush 48 54 61)
+  $b.BorderThickness = "1"
+  $b.Add_Click({
+    $slot = [string]$this.Tag
+    Write-OverlayLog "build-slot select requested: $slot"
+    try {
+      $client = New-Object System.Net.Http.HttpClient
+      $client.Timeout = [TimeSpan]::FromSeconds(3)
+      $url = "$script:httpBaseUrl/autoshift/build-slot/$slot"
+      $resp = $client.PostAsync($url, [System.Net.Http.HttpContent]$null).GetAwaiter().GetResult()
+      $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+      $client.Dispose()
+      Write-OverlayLog ("build-slot select result slot={0} status={1} body={2}" -f $slot, [int]$resp.StatusCode, $body)
+    } catch {
+      Write-OverlayLog ("build-slot select failed slot={0}: {1}" -f $slot, $_.Exception.Message)
+    }
+    $script:renderPending = $true
+  })
+  $slotGrid.Children.Add($b) | Out-Null
+  $script:slotButtons[$slot] = $b
+}
+$root.Children.Add($slotGrid) | Out-Null
+
+# Indicators row: Working (left) + Need Migrate (right)
+$indGrid = New-Object Windows.Controls.Grid
+$indGrid.Margin = "10,2,10,8"
+$indGrid.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = "*" }))
+$indGrid.ColumnDefinitions.Add((New-Object Windows.Controls.ColumnDefinition -Property @{ Width = "*" }))
+[Windows.Controls.Grid]::SetRow($indGrid, 4)
+
+function New-Indicator($col) {
+  $border = New-Object Windows.Controls.Border
+  $border.BorderThickness = "1"
+  $border.CornerRadius = "5"
+  $border.Margin = "0,0,$(if($col -eq 0){5}else{0}),0"
+  if ($col -eq 1) { $border.Margin = "5,0,0,0" }
+  $border.Padding = "10,7,10,7"
+  $border.Background = (New-Brush 22 27 34)
+  $border.BorderBrush = (New-Brush 48 54 61)
+  $sp = New-Object Windows.Controls.StackPanel
+  $sp.Orientation = "Horizontal"
+  $dot = New-Object Windows.Shapes.Ellipse
+  $dot.Width = 11; $dot.Height = 11
+  $dot.VerticalAlignment = "Center"
+  $dot.Fill = (New-Brush 72 79 88)
+  $lbl = New-Object Windows.Controls.TextBlock
+  $lbl.FontFamily = "Consolas"; $lbl.FontSize = 11
+  $lbl.Margin = "8,0,0,0"; $lbl.VerticalAlignment = "Center"
+  $lbl.Foreground = (New-Brush 125 133 144)
+  $sub = New-Object Windows.Controls.TextBlock
+  $sub.FontFamily = "Consolas"; $sub.FontSize = 10
+  $sub.Margin = "10,0,0,0"; $sub.VerticalAlignment = "Center"
+  $sub.Foreground = (New-Brush 110 118 129)
+  $sp.Children.Add($dot) | Out-Null
+  $sp.Children.Add($lbl) | Out-Null
+  $sp.Children.Add($sub) | Out-Null
+  $border.Child = $sp
+  [Windows.Controls.Grid]::SetColumn($border, $col)
+  return @{ border=$border; dot=$dot; lbl=$lbl; sub=$sub }
+}
+$script:workingInd = New-Indicator 0
+$script:workingInd.lbl.Text = "WORKING"
+$indGrid.Children.Add($script:workingInd.border) | Out-Null
+$script:migrateInd = New-Indicator 1
+$script:migrateInd.lbl.Text = "NEED MIGRATE"
+$indGrid.Children.Add($script:migrateInd.border) | Out-Null
+$root.Children.Add($indGrid) | Out-Null
+
+function Update-BuildSlot($bs, $speedKmh) {
+  if (-not $bs) { return }
+  $current = [string]$bs.currentSlot
+  $pending = [bool]$bs.pending
+  $needMigrate = [bool]$bs.needMigrate
+  $available = @()
+  if ($bs.available) { $available = @($bs.available | ForEach-Object { [string]$_ }) }
+  foreach ($slot in $script:BUILD_SLOTS) {
+    $b = $script:slotButtons[$slot]
+    if (-not $b) { continue }
+    $isCurrent = ($slot -eq $current) -and (-not $pending)
+    $learned = $available -contains $slot
+    if ($isCurrent) {
+      $b.Background = (New-Brush 15 36 23); $b.BorderBrush = (New-Brush 63 185 80); $b.BorderThickness = "2"; $b.Foreground = (New-Brush 63 185 80)
+    } elseif ($learned) {
+      $b.Background = (New-Brush 27 34 43); $b.BorderBrush = (New-Brush 90 101 115); $b.BorderThickness = "1"; $b.Foreground = (New-Brush 173 186 199)
+    } else {
+      $b.Background = (New-Brush 22 27 34); $b.BorderBrush = (New-Brush 48 54 61); $b.BorderThickness = "1"; $b.Foreground = (New-Brush 125 133 144)
+    }
+  }
+  # Working: grey (pending) / amber (<10 km/h) / green (>=10)
+  if ($pending) {
+    $script:workingInd.dot.Fill = (New-Brush 72 79 88); $script:workingInd.lbl.Text = "WORKING"; $script:workingInd.lbl.Foreground = (New-Brush 125 133 144)
+    $script:workingInd.sub.Text = "SELECT CONFIG"; $script:workingInd.border.BorderBrush = (New-Brush 48 54 61); $script:workingInd.border.Background = (New-Brush 22 27 34)
+  } elseif ($speedKmh -lt 10) {
+    $script:workingInd.dot.Fill = (New-Brush 210 153 34); $script:workingInd.lbl.Text = "WORKING (LOW SPEED)"; $script:workingInd.lbl.Foreground = (New-Brush 227 179 65)
+    $script:workingInd.sub.Text = ("{0} {1:n0} km/h" -f $current.ToUpper(), $speedKmh); $script:workingInd.border.BorderBrush = (New-Brush 106 84 20); $script:workingInd.border.Background = (New-Brush 28 26 16)
+  } else {
+    $script:workingInd.dot.Fill = (New-Brush 63 185 80); $script:workingInd.lbl.Text = "WORKING"; $script:workingInd.lbl.Foreground = (New-Brush 86 211 100)
+    $script:workingInd.sub.Text = $current.ToUpper(); $script:workingInd.border.BorderBrush = (New-Brush 42 90 54); $script:workingInd.border.Background = (New-Brush 15 36 23)
+  }
+  # Need Migrate: red / grey
+  if ($needMigrate) {
+    $script:migrateInd.dot.Fill = (New-Brush 248 81 73); $script:migrateInd.lbl.Foreground = (New-Brush 255 123 114)
+    $script:migrateInd.sub.Text = "TAP TO MIGRATE"; $script:migrateInd.border.BorderBrush = (New-Brush 138 58 58); $script:migrateInd.border.Background = (New-Brush 42 20 22)
+  } else {
+    $script:migrateInd.dot.Fill = (New-Brush 72 79 88); $script:migrateInd.lbl.Foreground = (New-Brush 125 133 144)
+    $script:migrateInd.sub.Text = ""; $script:migrateInd.border.BorderBrush = (New-Brush 48 54 61); $script:migrateInd.border.Background = (New-Brush 22 27 34)
+  }
+}
+
 $window.Content = $root
 
 $pump = New-Object OverlayWebSocketPump
@@ -608,6 +743,13 @@ $timer.Add_Tick({
       }
       $footer.Text = $WsUrl
     }
+    # Keep build-slot indicators current (speed drives the amber/green Working state),
+    # so refresh them every tick when we have a model, not only on renderPending.
+    if ($script:lastModel -and $script:lastModel.buildSlot) {
+      $spd = 0
+      if ($script:lastFrame -and $script:lastFrame.telemetry) { $spd = [double]$script:lastFrame.telemetry.speedKmh }
+      Update-BuildSlot $script:lastModel.buildSlot $spd
+    }
   } catch {
     $msg = "render failed: $($_.Exception.GetType().FullName): $($_.Exception.Message)"
     Write-OverlayLog $msg
@@ -617,6 +759,21 @@ $timer.Add_Tick({
     $footer.Text = $WsUrl
   }
 })
-$window.Add_Closed({ $timer.Stop(); $script:pump.Dispose(); Write-OverlayLog "window closed" })
+$window.Add_Closed({
+  $timer.Stop()
+  $script:pump.Dispose()
+  Write-OverlayLog "window closed"
+  # Closing the overlay also shuts down the main process (user-requested).
+  try {
+    $shutdownUrl = "$script:httpBaseUrl/shutdown"
+    $c = New-Object System.Net.Http.HttpClient
+    $c.Timeout = [TimeSpan]::FromSeconds(2)
+    $null = $c.PostAsync($shutdownUrl, [System.Net.Http.HttpContent]$null).GetAwaiter().GetResult()
+    $c.Dispose()
+    Write-OverlayLog "shutdown request sent to main process"
+  } catch {
+    Write-OverlayLog ("shutdown request failed: {0}" -f $_.Exception.Message)
+  }
+})
 $timer.Start()
 $window.ShowDialog() | Out-Null

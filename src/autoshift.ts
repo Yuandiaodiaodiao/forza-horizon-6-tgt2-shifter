@@ -11,7 +11,7 @@
  * No neural network needed — this is a direct physics computation.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { APP_DATA_DIR, loadConfig } from "./config";
 import { buildKeyAgentUrl } from "./env";
@@ -19,6 +19,14 @@ import type { PowerCurveSeed, PowerCurveSnapshot } from "./power_curve_types";
 
 const KEY_AGENT = buildKeyAgentUrl();
 const DATA_DIR = join(APP_DATA_DIR, "data", "cars");
+/** Build slots: a second classification layer UNDER the existing carKey
+ *  (which already separates ordinal/PI/cylinders/drivetrain). Lets the same
+ *  physical car at the same PI and drivetrain hold separate tunes (e.g. a
+ *  road build vs a dirt build with different engine/gearbox). */
+const BUILD_SLOTS = ["default", "road", "dirt", "cc", "drag", "drift"] as const;
+type BuildSlot = (typeof BUILD_SLOTS)[number];
+/** Remembered slot selection per carKey, persisted across sessions. */
+const SLOT_MEMORY_PATH = join(APP_DATA_DIR, "data", "build-slots.json");
 
 interface GearProfile {
   sampleCount: number;
@@ -54,6 +62,8 @@ interface CarProfile {
   discoveredTopGear: number;
   shiftTiming: ShiftTimingProfile;
   firstSeen: number;
+  /** Build slot this profile belongs to (default/road/dirt/cc/drag/drift). */
+  slot: string;
 }
 
 interface ShiftTimingProfile {
@@ -133,6 +143,17 @@ export class AdaptiveAutoShift {
   private lastPowerCurveRevision = 0;
   private currentCar: CarProfile | null = null;
   private currentOrdinal = 0;
+  /** Active build slot for the current car (one build is active at a time). */
+  private currentSlot: BuildSlot = "default";
+  /** True when the current car has multiple builds and no slot has been chosen
+   *  yet this session — shift output is held until the user picks one. */
+  private slotSelectionPending = false;
+  /** carKey -> set of build slots that already have a saved profile on disk. */
+  private availableSlots: Map<number, Set<BuildSlot>> = new Map();
+  /** carKeys that still have a legacy (no-suffix) file and NO new-suffix files. */
+  private legacyOnlyCarKeys: Set<number> = new Set();
+  /** carKey -> last chosen slot (persisted memory). */
+  private slotMemory: Map<number, BuildSlot> = new Map();
   private lastShiftTime = 0;
   private lastShiftDirection: "up" | "down" | null = null;
   private lastShiftFromGear = 0;
@@ -178,6 +199,14 @@ export class AdaptiveAutoShift {
     shiftTimePenaltyMs: 400,
     /** Minimum power advantage (HP) to trigger a shift — avoid micro-optimizing */
     minPowerAdvantageHp: 5,
+    /**
+     * Upshift only when the next gear's wheel thrust (power x gear ratio) exceeds
+     * the current gear's by at least this fraction. A small positive value biases
+     * toward holding the gear closer to redline (the gear-ratio crossover), which
+     * matches sim-racing consensus that wheel thrust in the lower gear usually
+     * wins until very near the limiter. 0.02 = require a 2% thrust gain to upshift.
+     */
+    upshiftThrustMarginFraction: 0.02,
     /** Downshifts are more likely to cause oscillation, so require a larger win. */
     downshiftAdvantageMultiplier: 2.0,
     /** Context downshift: prepare a lower gear while braking before waiting for low RPM. */
@@ -208,6 +237,10 @@ export class AdaptiveAutoShift {
     fuelCutPowerDropRatio: 0.82,
     /** Strong learned power above a detected fuel-cut RPM refutes that fuel-cut estimate. */
     fuelCutRefutePowerRatio: 0.90,
+    /** At/above this fuel-cut confidence, the cut is trusted as a hard ceiling
+     *  even if some power appears above it (a confirmed limiter makes no real
+     *  power past the cut). Below it, strong power above refutes a likely-mislearned cut. */
+    fuelCutTrustConfidence: 0.8,
     fuelCutRefuteRpmMargin: 120,
     /** RPM growth below this amount across the recent window counts as limiter plateau. */
     fuelCutPlateauRpmDelta: 80,
@@ -241,6 +274,14 @@ export class AdaptiveAutoShift {
     gearMinSpeedToleranceKmh: 2.0,
     /** Reset to first gear once the car is effectively stopped. */
     stopResetSpeedKmh: 1.0,
+    /**
+     * After a race start, the tool does NOT issue any shift command until the car
+     * exceeds this speed. FH6 always starts every race in 1st with the clutch
+     * engaged, and telemetry gear is unreliable for the first moments at the grid,
+     * so the safest behavior is to let the game launch the car itself and only take
+     * over once it is clearly moving. Data reading/learning continues throughout.
+     */
+    raceStartGraceSpeedKmh: 10.0,
     /** Fallback RPM thresholds when power curve data is insufficient */
     fallbackUpshiftFraction: 0.92,
     fallbackDownshiftFraction: 0.35,
@@ -259,7 +300,8 @@ export class AdaptiveAutoShift {
 
   /** Save a single car profile to disk as JSON */
   private saveCar(carKey: number, car: CarProfile) {
-    const path = join(DATA_DIR, `${carKey}.json`);
+    const slot = (car.slot && (BUILD_SLOTS as readonly string[]).includes(car.slot)) ? car.slot : "default";
+    const path = join(DATA_DIR, `${carKey}_${slot}.json`);
     const data: any = {
       carKey,
       ordinal: car.ordinal,
@@ -278,6 +320,7 @@ export class AdaptiveAutoShift {
       discoveredTopGear: car.discoveredTopGear,
       shiftTiming: car.shiftTiming,
       firstSeen: car.firstSeen,
+      slot: car.slot || "default",
       gears: {} as Record<number, any>,
     };
     for (const [bin, v] of car.powerByRpm) {
@@ -299,7 +342,7 @@ export class AdaptiveAutoShift {
   }
 
   /** Load a single car profile from disk */
-  private loadCar(path: string): { carKey: number; profile: CarProfile } | null {
+  private loadCar(path: string, slot: BuildSlot = "default"): { carKey: number; profile: CarProfile } | null {
     try {
       const rawText = readFileSync(path, "utf-8").replace(/^\uFEFF/, "");
       const raw = JSON.parse(rawText);
@@ -362,6 +405,7 @@ export class AdaptiveAutoShift {
           discoveredTopGear: Number(raw.discoveredTopGear) || 0,
           shiftTiming: this.normalizeShiftTiming(raw.shiftTiming),
           firstSeen: raw.firstSeen,
+          slot,
         },
       };
     } catch (e) {
@@ -372,24 +416,91 @@ export class AdaptiveAutoShift {
 
   /** Load all car profiles from data directory */
   private loadAll() {
+    this.loadSlotMemory();
     if (!existsSync(DATA_DIR)) return;
     const files = readdirSync(DATA_DIR).filter(f => f.endsWith(".json"));
+    // Parse each filename into { carKey, slot|legacy }. New files are
+    // "<carKey>_<slot>.json"; legacy files are "<carKey>.json".
+    const legacyByCar = new Map<number, string>();          // carKey -> legacy filename
+    const slotFilesByCar = new Map<number, Map<BuildSlot, string>>();
     for (const f of files) {
-      const result = this.loadCar(join(DATA_DIR, f));
-      if (result) {
-        this.carProfiles.set(result.carKey, result.profile);
-        const gearCount = result.profile.gears.size;
-        const bins = result.profile.powerByRpm.size;
-        this.log(`Loaded car ${result.carKey}: ${result.profile.totalSamples} samples, ${gearCount} gears, ${bins} shared power bins`);
+      const stem = f.slice(0, -5); // drop ".json"
+      const us = stem.lastIndexOf("_");
+      let carKey = NaN;
+      let slot: BuildSlot | null = null;
+      if (us > 0) {
+        const maybeSlot = stem.slice(us + 1);
+        const maybeKey = Number(stem.slice(0, us));
+        if ((BUILD_SLOTS as readonly string[]).includes(maybeSlot) && Number.isFinite(maybeKey)) {
+          carKey = maybeKey;
+          slot = maybeSlot as BuildSlot;
+        }
       }
+      if (slot === null) {
+        const k = Number(stem);
+        if (Number.isFinite(k)) { carKey = k; legacyByCar.set(k, f); }
+        continue;
+      }
+      if (!slotFilesByCar.has(carKey)) slotFilesByCar.set(carKey, new Map());
+      slotFilesByCar.get(carKey)!.set(slot, f);
     }
-    if (files.length > 0) this.log(`Loaded ${files.length} car profiles from disk`);
+
+    // Record availability + legacy-only set; load a representative profile per carKey.
+    for (const [carKey, slotMap] of slotFilesByCar) {
+      this.availableSlots.set(carKey, new Set(slotMap.keys()));
+      // Representative slot for display/snapshot: remembered -> default -> first.
+      const remembered = this.slotMemory.get(carKey);
+      const repSlot: BuildSlot = (remembered && slotMap.has(remembered)) ? remembered
+        : slotMap.has("default") ? "default"
+        : [...slotMap.keys()][0];
+      const result = this.loadCar(join(DATA_DIR, slotMap.get(repSlot)!), repSlot);
+      if (result) this.carProfiles.set(result.carKey, result.profile);
+    }
+    // Legacy-only cars (no new-suffix file at all): still load them so they
+    // remain visible/usable until migrated, and flag them for migration.
+    for (const [carKey, f] of legacyByCar) {
+      if (slotFilesByCar.has(carKey)) continue;
+      this.legacyOnlyCarKeys.add(carKey);
+      const result = this.loadCar(join(DATA_DIR, f), "default");
+      if (result) this.carProfiles.set(result.carKey, result.profile);
+    }
+
+    const total = slotFilesByCar.size + this.legacyOnlyCarKeys.size;
+    if (total > 0) this.log(`Loaded ${slotFilesByCar.size} car(s) with build slots, ${this.legacyOnlyCarKeys.size} legacy-only car(s) pending migration`);
+  }
+
+  private loadSlotMemory() {
+    try {
+      if (!existsSync(SLOT_MEMORY_PATH)) return;
+      const raw = JSON.parse(readFileSync(SLOT_MEMORY_PATH, "utf8")) as Record<string, string>;
+      for (const [k, v] of Object.entries(raw)) {
+        if ((BUILD_SLOTS as readonly string[]).includes(v)) this.slotMemory.set(Number(k), v as BuildSlot);
+      }
+    } catch (e) {
+      this.log(`Failed to load slot memory: ${String(e)}`);
+    }
+  }
+
+  private saveSlotMemory() {
+    try {
+      mkdirSync(join(APP_DATA_DIR, "data"), { recursive: true });
+      const obj: Record<string, string> = {};
+      for (const [k, v] of this.slotMemory) obj[String(k)] = v;
+      writeFileSync(SLOT_MEMORY_PATH, JSON.stringify(obj));
+    } catch (e) {
+      this.log(`Failed to save slot memory: ${String(e)}`);
+    }
   }
 
   /** Save all dirty profiles. Called periodically and on car switch. */
   saveAll() {
     if (!this.dirty) return;
     for (const [carKey, car] of this.carProfiles) {
+      // Legacy-only cars (old no-suffix file, not yet migrated) must NOT be
+      // auto-written as a new <carKey>_default.json — that would silently strip
+      // their "needs migration" status. They stay read-only until the user picks
+      // a slot (which migrates them and removes them from legacyOnlyCarKeys).
+      if (this.legacyOnlyCarKeys.has(carKey)) continue;
       if (car.totalSamples > 0) {
         this.saveCar(carKey, car);
       }
@@ -420,7 +531,7 @@ export class AdaptiveAutoShift {
     };
   }
 
-  private createEmptyCarProfile(ordinal: number, maxRpm: number, idleRpm: number): CarProfile {
+  private createEmptyCarProfile(ordinal: number, maxRpm: number, idleRpm: number, slot: BuildSlot = "default"): CarProfile {
     return {
       ordinal,
       maxRpm,
@@ -439,6 +550,7 @@ export class AdaptiveAutoShift {
       discoveredTopGear: 0,
       shiftTiming: this.defaultShiftTiming(),
       firstSeen: Date.now(),
+      slot,
     };
   }
 
@@ -522,10 +634,10 @@ export class AdaptiveAutoShift {
 
   // --- Car management ---
 
-  private getOrCreateCar(ordinal: number, maxRpm: number, idleRpm: number): CarProfile {
+  private getOrCreateCar(ordinal: number, maxRpm: number, idleRpm: number, slot: BuildSlot = "default"): CarProfile {
     if (!this.carProfiles.has(ordinal)) {
-      this.carProfiles.set(ordinal, this.createEmptyCarProfile(ordinal, maxRpm, idleRpm));
-      this.log(`NEW CAR detected: ordinal=${ordinal} maxRPM=${maxRpm} idle=${idleRpm}`);
+      this.carProfiles.set(ordinal, this.createEmptyCarProfile(ordinal, maxRpm, idleRpm, slot));
+      this.log(`NEW CAR detected: ordinal=${ordinal} maxRPM=${maxRpm} idle=${idleRpm} slot=${slot}`);
     }
     const car = this.carProfiles.get(ordinal)!;
     if (maxRpm > car.maxRpm) car.maxRpm = maxRpm;
@@ -537,7 +649,42 @@ export class AdaptiveAutoShift {
     // Save previous car data before switching
     if (this.dirty) this.saveAll();
     this.currentOrdinal = ordinal;
-    this.currentCar = this.getOrCreateCar(ordinal, maxRpm, idleRpm);
+
+    // Decide the build slot for this car (the layer UNDER carKey).
+    const slots = this.availableSlots.get(ordinal);
+    const remembered = this.slotMemory.get(ordinal);
+    this.slotSelectionPending = false;
+    if (!slots || slots.size === 0) {
+      if (this.legacyOnlyCarKeys.has(ordinal)) {
+        // Legacy-only: needs migration. Hold output until the user picks a slot
+        // (which performs the migration). No fresh learning into a slot yet.
+        this.slotSelectionPending = true;
+        this.currentSlot = "default";
+        this.currentCar = this.getOrCreateCar(ordinal, maxRpm, idleRpm, "default");
+      } else {
+        // Brand-new car: auto-create the default slot and start learning.
+        this.currentSlot = "default";
+        this.currentCar = this.getOrCreateCar(ordinal, maxRpm, idleRpm, "default");
+        this.availableSlots.set(ordinal, new Set(["default"]));
+      }
+    } else if (slots.size === 1) {
+      this.currentSlot = [...slots][0];
+      this.currentCar = this.loadOrCreateSlot(ordinal, this.currentSlot, maxRpm, idleRpm);
+    } else if (remembered && slots.has(remembered)) {
+      this.currentSlot = remembered;
+      this.currentCar = this.loadOrCreateSlot(ordinal, this.currentSlot, maxRpm, idleRpm);
+    } else {
+      // Multiple builds, no memory: wait for the user to choose.
+      this.slotSelectionPending = true;
+      this.currentSlot = "default";
+      this.currentCar = this.getOrCreateCar(ordinal, maxRpm, idleRpm, "default");
+    }
+
+    this.resetTransientShiftState();
+    this.log(`SWITCH to car ordinal=${ordinal} slot=${this.currentSlot} pending=${this.slotSelectionPending} (${this.currentCar.totalSamples} existing samples)`);
+  }
+
+  private resetTransientShiftState() {
     this.lastShiftTime = 0;
     this.lastShiftDirection = null;
     this.lastShiftFromGear = 0;
@@ -546,7 +693,78 @@ export class AdaptiveAutoShift {
     this.nextFallbackDiscoveryUpshiftAt = 0;
     this.blockUpshiftUntil = 0;
     this.blockDownshiftUntil = 0;
-    this.log(`SWITCH to car ordinal=${ordinal} (${this.currentCar.totalSamples} existing samples)`);
+  }
+
+  /** Load the given slot's profile from disk into carProfiles, or create empty. */
+  private loadOrCreateSlot(carKey: number, slot: BuildSlot, maxRpm: number, idleRpm: number): CarProfile {
+    const path = join(DATA_DIR, `${carKey}_${slot}.json`);
+    if (existsSync(path)) {
+      const result = this.loadCar(path, slot);
+      if (result) {
+        this.carProfiles.set(carKey, result.profile);
+        return result.profile;
+      }
+    }
+    const empty = this.createEmptyCarProfile(carKey, maxRpm, idleRpm, slot);
+    this.carProfiles.set(carKey, empty);
+    return empty;
+  }
+
+  /** Build-slot status for the overlay/dashboard. */
+  getBuildSlotState() {
+    const carKey = this.currentOrdinal;
+    const slots = this.availableSlots.get(carKey);
+    const needMigrate = this.legacyOnlyCarKeys.has(carKey) && (!slots || slots.size === 0);
+    return {
+      carKey,
+      slots: BUILD_SLOTS as readonly string[],
+      currentSlot: this.currentSlot,
+      available: slots ? [...slots] : [],
+      pending: this.slotSelectionPending,
+      needMigrate,
+    };
+  }
+
+  /** User picked a build slot (overlay button). Handles migrate / load / create. */
+  selectBuildSlot(slot: string): { ok: boolean; message: string; action: string } {
+    if (!(BUILD_SLOTS as readonly string[]).includes(slot)) {
+      return { ok: false, message: `unknown slot ${slot}`, action: "none" };
+    }
+    const carKey = this.currentOrdinal;
+    if (!carKey || !this.currentCar) return { ok: false, message: "no current car", action: "none" };
+    const target = slot as BuildSlot;
+    const slots = this.availableSlots.get(carKey) ?? new Set<BuildSlot>();
+    let action: string;
+
+    if (this.legacyOnlyCarKeys.has(carKey) && slots.size === 0) {
+      // Migrate: copy legacy <carKey>.json -> <carKey>_<slot>.json (keep legacy).
+      const legacy = join(DATA_DIR, `${carKey}.json`);
+      const dest = join(DATA_DIR, `${carKey}_${target}.json`);
+      try {
+        if (existsSync(legacy)) copyFileSync(legacy, dest);
+      } catch (e) {
+        return { ok: false, message: `migrate failed: ${String(e)}`, action: "migrate" };
+      }
+      this.legacyOnlyCarKeys.delete(carKey);
+      action = "migrated";
+    } else if (slots.has(target)) {
+      action = "loaded";
+    } else {
+      action = "created";
+    }
+
+    // Persist the just-finished build before swapping, then activate the chosen slot.
+    if (this.dirty) this.saveAll();
+    this.currentSlot = target;
+    this.currentCar = this.loadOrCreateSlot(carKey, target, this.currentCar.maxRpm, this.currentCar.idleRpm);
+    slots.add(target);
+    this.availableSlots.set(carKey, slots);
+    this.slotMemory.set(carKey, target);
+    this.saveSlotMemory();
+    this.slotSelectionPending = false;
+    this.resetTransientShiftState();
+    this.log(`BUILD SLOT ${action}: car=${carKey} slot=${target}`);
+    return { ok: true, message: `slot ${target} ${action}`, action };
   }
 
   private getGearProfile(car: CarProfile, gear: number): GearProfile {
@@ -561,6 +779,27 @@ export class AdaptiveAutoShift {
   }
 
   // --- Manual override (directional) ---
+
+  // --- Race start: FH6 always begins every race in 1st with clutch engaged. ---
+  // Clear any stale shift state left over from the previous race so the engine
+  // doesn't think it's mid-shift or in a high gear at the new launch. We do NOT
+  // command any gear change here (the game is already in 1st); we only reset our
+  // own assumed state so the very first decision is computed from gear 1.
+  onRaceStart() {
+    this.lastShiftTime = 0;
+    this.lastShiftDirection = null;
+    this.lastShiftFromGear = 0;
+    this.lastShiftToGear = 1;
+    this.nextCeilingUpshiftAt = 0;
+    this.nextFallbackDiscoveryUpshiftAt = 0;
+    this.blockUpshiftUntil = 0;
+    this.blockDownshiftUntil = 0;
+    this.shiftExecutionLocked = false;
+    this.latestTelemetryGear = 1;
+    this.latestTelemetryClutch = 0;
+    this.raceStartGraceActive = true;
+    this.log("RACE START: internal state reset to gear 1 (no shift commanded); holding off until car moves");
+  }
 
   onManualUpshift(currentGear: number) {
     const baseGear = this.getManualBaseGear(currentGear);
@@ -1054,9 +1293,17 @@ export class AdaptiveAutoShift {
       const currentPower = this.lookupPower(car, rpm);
       const nextPower = this.lookupPower(car, nextRpm);
       if (currentPower === null || nextPower === null) continue;
-      const currentIsFalling = currentPower <= car.peakPower - this.config.minPowerAdvantageHp
-        || rpm >= usableCeiling - Math.max(150, this.config.rpmBinSize * 10);
-      if (currentIsFalling && nextPower >= currentPower - this.config.minPowerAdvantageHp) {
+      // Optimal upshift = the gear-ratio "thrust crossover", per sim-racing
+      // consensus: wheel thrust is proportional to power x gear-ratio (the final
+      // drive cancels between gears). Stay in the current gear until shifting up
+      // actually produces MORE wheel thrust than staying. Comparing raw power
+      // against peak power (the previous behavior) upshifted near the power peak,
+      // far too early on cars that still make strong power up to redline.
+      const currentThrust = currentPower * fromRatio;
+      const nextThrust = nextPower * toRatio;
+      // Small hysteresis so quantization noise near the crossover doesn't shift early.
+      const thrustMargin = currentThrust * this.config.upshiftThrustMarginFraction;
+      if (nextThrust >= currentThrust + thrustMargin) {
         best = rpm;
         break;
       }
@@ -1165,12 +1412,21 @@ export class AdaptiveAutoShift {
     let source = "maxRpm";
 
     const fuelCutRefuteRpm = car.fuelCutRpm > 0 ? this.getStrongPowerRpmAbove(car, car.fuelCutRpm) : null;
-    if (car.fuelCutRpm > 0 && car.fuelCutConfidence >= 0.3) {
+    const fuelCutHighConfidence = car.fuelCutConfidence >= this.config.fuelCutTrustConfidence;
+    if (car.fuelCutRpm > 0 && car.fuelCutConfidence >= 0.3 && (fuelCutRefuteRpm === null || fuelCutHighConfidence)) {
+      // Treat the learned fuel-cut RPM as a hard ceiling when either (a) it is not
+      // contradicted by strong power above it, or (b) we are highly confident in it
+      // (a real, repeatedly-confirmed limiter produces no power past the cut, so
+      // "strong power" readings above it are noise/coast artifacts). This preserves
+      // the maintainer's "confirmed fuel cut wins" behavior.
       ceiling = Math.min(ceiling, car.fuelCutRpm - this.config.rpmBinSize);
       source = fuelCutRefuteRpm === null
         ? `fuel-cut@${car.fuelCutRpm}`
-        : `fuel-cut-priority@${car.fuelCutRpm}/strong@${fuelCutRefuteRpm}`;
+        : `fuel-cut-confirmed@${car.fuelCutRpm}`;
     } else if (car.fuelCutRpm > 0 && fuelCutRefuteRpm !== null) {
+      // A low/medium-confidence fuel-cut value contradicted by strong measured
+      // power above it is likely mislearned (e.g. a stale/too-low value). Don't let
+      // it short-shift the car; let it rev toward redline where the power actually is.
       source = `fuel-cut-refuted@${car.fuelCutRpm}/strong@${fuelCutRefuteRpm}`;
     }
 
@@ -1476,6 +1732,11 @@ export class AdaptiveAutoShift {
   private heldGear = -99;
   private autoHolding = false;
   private shiftExecutionLocked = false;
+  /**
+   * True from a race start until the car first exceeds raceStartGraceSpeedKmh.
+   * While true, update() reads/learns telemetry but issues NO shift commands.
+   */
+  private raceStartGraceActive = false;
   private latestTelemetryGear = 0;
   private latestTelemetryClutch = 255;
   private latestTelemetryAt = 0;
@@ -1530,7 +1791,7 @@ export class AdaptiveAutoShift {
   }
 
   private isShiftOutputDisabled(): boolean {
-    return loadConfig().shiftMode === "off";
+    return loadConfig().shiftMode === "off" || this.slotSelectionPending;
   }
 
   private async keyAgentFetch(path: string): Promise<boolean> {
@@ -1829,6 +2090,21 @@ export class AdaptiveAutoShift {
     this.recordSample(car, frame);
     this.maybeSave();
 
+    // Race-start grace: after a new race begins, do NOT issue any shift command
+    // until the car is clearly moving. FH6 starts every race in 1st with the clutch
+    // engaged, and the telemetry gear is unreliable at the grid (it can still read
+    // the previous race's gear or Neutral for a moment). Acting on that bad gear is
+    // what stalled the launch (e.g. a g2->g1 downshift pressing the car into Neutral).
+    // We keep reading/learning above this line; we only hold back OUTPUT here.
+    if (this.raceStartGraceActive) {
+      if (speed_kmh > this.config.raceStartGraceSpeedKmh) {
+        this.raceStartGraceActive = false;
+        this.log(`RACE START: grace released at ${speed_kmh.toFixed(1)} km/h, auto-shift active`);
+      } else {
+        return { action: null, reason: `race-start grace (<= ${this.config.raceStartGraceSpeedKmh} km/h)` };
+      }
+    }
+
     // Skip invalid states
     if (gear < 1 || gear > this.config.maxGear) return { action: null, reason: `gear=${gear}` };
     if (this.hasRecentUnconfirmedShift(now, this.config.shiftCooldownMs)) {
@@ -2103,7 +2379,7 @@ export class AdaptiveAutoShift {
     if (!carKey || !this.currentCar) return { ok: false, carKey: 0, message: "no current car" };
 
     const previous = this.currentCar;
-    const reset = this.createEmptyCarProfile(carKey, previous.maxRpm, previous.idleRpm);
+    const reset = this.createEmptyCarProfile(carKey, previous.maxRpm, previous.idleRpm, this.currentSlot);
     this.carProfiles.set(carKey, reset);
     this.currentCar = reset;
     this.curveLookupCache.delete(previous);
@@ -2121,12 +2397,12 @@ export class AdaptiveAutoShift {
     this.fuelCutSamples = [];
     this.dirty = false;
     try {
-      const path = join(DATA_DIR, `${carKey}.json`);
+      const path = join(DATA_DIR, `${carKey}_${this.currentSlot}.json`);
       if (existsSync(path)) unlinkSync(path);
     } catch (error) {
-      this.log(`RESET current car ${carKey}: failed to delete persisted profile: ${String(error)}`);
+      this.log(`RESET current car ${carKey} slot ${this.currentSlot}: failed to delete persisted profile: ${String(error)}`);
     }
-    this.log(`RESET current car ${carKey}: cleared learned shift model`);
+    this.log(`RESET current car ${carKey} slot ${this.currentSlot}: cleared learned shift model`);
     this.traceDecision(`RESET current car ${carKey}: cleared learned shift model`, true);
     return { ok: true, carKey, message: "reset current car learning" };
   }
@@ -2205,6 +2481,7 @@ export class AdaptiveAutoShift {
     return {
       enabled: this.enabled,
       currentCar: this.currentOrdinal,
+      buildSlot: this.getBuildSlotState(),
       learningStatus,
       fallbackGears,
       blockUpshift: Date.now() < this.blockUpshiftUntil,

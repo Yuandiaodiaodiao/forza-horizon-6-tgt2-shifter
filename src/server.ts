@@ -134,6 +134,15 @@ const server = Bun.serve<{ channel: "dashboard" | "overlay" }>({
       if (result.ok) broadcastOverlayModel();
       return Response.json(result, { status: result.ok ? 200 : 409, headers: cors });
     }
+    if (path === "/autoshift/build-slot" && req.method === "GET") {
+      return Response.json(autoShift.getBuildSlotState(), { headers: cors });
+    }
+    if (path.startsWith("/autoshift/build-slot/") && req.method === "POST") {
+      const slot = path.slice("/autoshift/build-slot/".length);
+      const result = autoShift.selectBuildSlot(slot);
+      refreshPowerCurveSnapshot();
+      return Response.json(result, { status: result.ok ? 200 : 409, headers: cors });
+    }
     if (path === "/overlay/state") {
       return Response.json(buildOverlayState(), { headers: cors });
     }
@@ -148,6 +157,20 @@ const server = Bun.serve<{ channel: "dashboard" | "overlay" }>({
     if (path === "/autoshift/toggle") {
       autoShift.setEnabled(!autoShift.isEnabled());
       return new Response(`OK:${autoShift.isEnabled() ? "ON" : "OFF"}`, { headers: cors });
+    }
+    if (path === "/shutdown" && req.method === "POST") {
+      // Used by the overlay window's close handler so that closing the overlay
+      // also shuts down the main process (graceful: flush worker + save profiles).
+      // Default ON: closing the overlay quits the tool, so users don't have to
+      // kill the process from Task Manager. Set TGT2_KILL_MAIN_ON_OVERLAY_CLOSE=0
+      // (or false/no/off) to keep the main process running after the overlay closes.
+      if (envBool("TGT2_KILL_MAIN_ON_OVERLAY_CLOSE", true)) {
+        console.log("  [shutdown] requested via /shutdown");
+        queueMicrotask(shutdown);
+        return new Response("OK:SHUTDOWN", { headers: cors });
+      }
+      console.log("  [shutdown] ignored (TGT2_KILL_MAIN_ON_OVERLAY_CLOSE disabled)");
+      return new Response("OK:SHUTDOWN-DISABLED", { headers: cors });
     }
 
     return new Response("T-GT II Server | /dashboard.html | /autoshift/status|export-fixture|reset-current|on|off|toggle", { status: 200, headers: cors });
@@ -206,11 +229,23 @@ function broadcastOverlay(json: string) {
 }
 
 async function setRaceStartGear() {
+  // FH6 starts EVERY race (online and offline) already in 1st gear with the
+  // clutch engaged — you can just hit the throttle. So at race start we must NOT
+  // press shift keys (that fights the game and, in keyboard mode, can desync or
+  // stall the launch). We only need to align our INTERNAL state to gear 1:
+  //   1) reset autoshift's assumed gear / shift locks, and
+  //   2) sync the key agent's currentGear to 1 WITHOUT pressing keys.
+  // This fixes the "2nd online race won't launch" bug: previously the reset was
+  // skipped whenever telemetry already read gear 1 (which it always does at the
+  // grid), leaving the internal currentGear stuck on the previous race's high gear.
+  autoShift.onRaceStart();
+  lastKeyAgentGear = 1;
+  lastTelemGear = 1;
   try {
-    const resp = await fetch(`${KEY_AGENT}/gear/hold/1`);
-    console.log(`  [race] Set gear 1 via key agent: ${resp.status}`);
+    const resp = await fetch(`${KEY_AGENT}/gear/sync/1`);
+    console.log(`  [race] Race start: internal gear synced to 1 (no keys): ${resp.status}`);
   } catch (e) {
-    console.log(`  [race] Failed to set gear 1: ${e instanceof Error ? e.message : String(e)}`);
+    console.log(`  [race] Failed to sync gear 1: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -384,6 +419,7 @@ function buildOverlayModel() {
     : null;
   return {
     ts: Date.now() / 1000,
+    buildSlot: status.buildSlot,
     autoshift: {
       enabled: status.enabled,
       currentCar: status.currentCar,
@@ -443,6 +479,7 @@ function buildOverlayState() {
   return {
     ...buildOverlayModel(),
     telemetry: latestTelemetry ? buildOverlayFrame(latestTelemetry).telemetry : null,
+    buildSlot: autoShift.getBuildSlotState(),
   };
 }
 
@@ -561,7 +598,11 @@ function dispatchCapturedTelemetry() {
   lastLapNumber = lap;
   if (evt.gear >= 1 && evt.gear <= 10) lastTelemGear = evt.gear;
   autoShift.noteTelemetryGear(evt.gear, evt.clutch);
-  if (evt.gear !== lastKeyAgentGear) {
+  // Only mirror forward gears (1-10) to the key agent. Reverse (0) and Neutral (11)
+  // appear in telemetry during the between-race lobby/loading screens; syncing them
+  // would poison the agent's currentGear and make the race-start "go to gear 1"
+  // logic press downshift into Reverse. Keep currentGear on the last real forward gear.
+  if (evt.gear >= 1 && evt.gear <= 10 && evt.gear !== lastKeyAgentGear) {
     lastKeyAgentGear = evt.gear;
     fetch(`${KEY_AGENT}/telem/${evt.gear}`).catch(() => {});
   }
