@@ -373,8 +373,13 @@ function Update-BuildSlot($bs, $speedKmh) {
       $b.Background = (New-Brush 22 27 34); $b.BorderBrush = (New-Brush 48 54 61); $b.BorderThickness = "1"; $b.Foreground = (New-Brush 125 133 144)
     }
   }
-  # Working: grey (pending) / amber (<10 km/h) / green (>=10)
-  if ($pending) {
+  # Working: blue DRIFT (read-only) / grey (pending) / amber (<10 km/h) / green (>=10)
+  $driftReadonly = $false
+  if ($bs.PSObject.Properties.Name -contains "driftReadonly") { $driftReadonly = [bool]$bs.driftReadonly }
+  if ($driftReadonly) {
+    $script:workingInd.dot.Fill = (New-Brush 56 139 253); $script:workingInd.lbl.Text = "DRIFT (MANUAL)"; $script:workingInd.lbl.Foreground = (New-Brush 121 192 255)
+    $script:workingInd.sub.Text = "READ-ONLY - NO AUTO SHIFT"; $script:workingInd.border.BorderBrush = (New-Brush 31 73 128); $script:workingInd.border.Background = (New-Brush 13 27 48)
+  } elseif ($pending) {
     $script:workingInd.dot.Fill = (New-Brush 72 79 88); $script:workingInd.lbl.Text = "WORKING"; $script:workingInd.lbl.Foreground = (New-Brush 125 133 144)
     $script:workingInd.sub.Text = "SELECT CONFIG"; $script:workingInd.border.BorderBrush = (New-Brush 48 54 61); $script:workingInd.border.Background = (New-Brush 22 27 34)
   } elseif ($speedKmh -lt 10) {
