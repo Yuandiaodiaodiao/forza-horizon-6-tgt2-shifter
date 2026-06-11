@@ -722,7 +722,13 @@ export class AdaptiveAutoShift {
       available: slots ? [...slots] : [],
       pending: this.slotSelectionPending,
       needMigrate,
+      driftReadonly: this.isDriftSlot(),
     };
+  }
+
+  /** Public: true when the active slot is drift (read-only, no shifting/learning). */
+  isDriftReadonly(): boolean {
+    return this.isDriftSlot();
   }
 
   /** User picked a build slot (overlay button). Handles migrate / load / create. */
@@ -943,6 +949,10 @@ export class AdaptiveAutoShift {
   // --- Learning retained here for drivetrain/fuel-cut state; power curve is worker-owned ---
 
   private recordSample(car: CarProfile, frame: TelemetryFrame) {
+    // Drift slot is read-only: do not learn. Drifting runs the engine at sustained
+    // high RPM with the wheels spinning, so its power/ratio data does not match
+    // normal driving and would corrupt the learned model.
+    if (this.isDriftSlot()) return;
     const { gear, rpm, accel, wheel_speed, drivetrain } = frame;
     if (gear < 1 || rpm < 500) return;
     const powerHp = this.getEnginePowerHp(frame);
@@ -1791,7 +1801,15 @@ export class AdaptiveAutoShift {
   }
 
   private isShiftOutputDisabled(): boolean {
-    return loadConfig().shiftMode === "off" || this.slotSelectionPending;
+    return loadConfig().shiftMode === "off" || this.slotSelectionPending || this.isDriftSlot();
+  }
+
+  /** Drift slot is read-only: the tool never issues shift commands and never learns
+   *  while it is active. Locking the gearbox and shifting by hand is optimal for
+   *  drifting, and the drift-state engine data (sustained high-RPM wheelspin) would
+   *  otherwise pollute the normal power-curve / gear-ratio learning. */
+  private isDriftSlot(): boolean {
+    return this.currentSlot === "drift" && !this.slotSelectionPending;
   }
 
   private async keyAgentFetch(path: string): Promise<boolean> {

@@ -581,7 +581,7 @@ function dispatchCapturedTelemetry() {
   latestTelemetry = evt;
   broadcast(JSON.stringify({ ...evt, seq: frameSequence }));
   broadcastOverlay(JSON.stringify(buildOverlayFrame(evt, frameSequence)));
-  powerCurve.submit(evt);
+  if (!autoShift.isDriftReadonly()) powerCurve.submit(evt);
 
   const dist = evt.distance ?? 0;
   const lap = evt.lap_number ?? 0;
