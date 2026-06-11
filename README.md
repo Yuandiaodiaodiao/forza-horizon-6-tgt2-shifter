@@ -4,6 +4,9 @@ Bun + TypeScript implementation for reading a Thrustmaster T-GT II wheel,
 receiving Forza Horizon 6 telemetry, serving a dashboard, and running a
 manual/automatic hybrid shifting strategy.
 
+##
+非常感谢 https://github.com/qq00qq00 的贡献！！！
+
 ## Run
 
 ```bash
